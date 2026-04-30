@@ -174,9 +174,10 @@ URL="$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PR
 # ---------- 8. smoke ----------
 step "Smoke testing the deployed service"
 sleep 3
-HEALTH="$(curl -fsS "$URL/healthz" || echo 'FAIL')"
+# /healthz is intercepted by Google Frontend on Cloud Run; use the /_health alias.
+HEALTH="$(curl -fsS "$URL/_health" || echo 'FAIL')"
 READY="$(curl -fsS "$URL/readyz"  || echo 'FAIL')"
-green "  /healthz  → $HEALTH"
+green "  /_health  → $HEALTH"
 green "  /readyz   → $READY"
 
 echo
