@@ -1500,6 +1500,24 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.cla
 
 // ── DATE ──
 function todayKey(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// HTML-safe + auto-linkify. Used in task expand panels so notes containing
+// URLs render as clickable links and < / > / & don't break the layout.
+function escapeHtml(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+function linkify(s){
+  // Run AFTER escapeHtml so we don't double-escape the URL itself.
+  // Match http(s) URLs that don't contain whitespace or closing punctuation.
+  return String(s==null?'':s).replace(
+    /(https?:\/\/[^\s<>"')]+)/g,
+    (m)=>`<a href="${m}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline;">${m}</a>`
+  );
+}
 function fmtDate(s){if(!s)return'';const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('en-US',{month:'short',day:'numeric'});}
 function fmtMoney(n){return'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});}
 
@@ -3118,8 +3136,14 @@ function renderDiscipline(){
       const tagSrc = (t.labels && t.labels.length) ? t.labels : (t.tags || []);
       const labelChips=tagSrc.slice(0,2).map(l=>`<span style="font-size:0.55rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">#${l}</span>`).join(' ');
       const stepsHtml=(t.steps||[]).map((s,i)=>`<li style="margin:4px 0;color:var(--text-2);font-size:var(--text-xs);line-height:1.5;"><span style="color:var(--blue);font-weight:700;margin-right:6px;">${i+1}.</span>${s}</li>`).join('');
-      const expanded = isOpen ? `<div class="task-expand" style="margin-top:var(--s3);padding-top:var(--s3);border-top:1px dashed var(--border);">
+      const notesText = (t.notes || '').trim();
+      const notesHtml = notesText ? `<div style="font-size:0.6rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Notes</div><div style="font-size:var(--text-xs);color:var(--text-2);line-height:1.55;white-space:pre-wrap;margin-bottom:var(--s3);">${linkify(escapeHtml(notesText))}</div>` : '';
+      const fbList = (t.feedback || []).slice(-3).map(f=>`<div style="font-size:var(--text-xs);color:var(--text-2);margin:4px 0;"><span style="color:var(--text-3);">${escapeHtml(f.author||'')} · ${escapeHtml((f.ts||'').slice(0,16).replace('T',' '))}:</span> ${escapeHtml(f.text||'')}</div>`).join('');
+      const fbHtml = fbList ? `<div style="font-size:0.6rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Feedback</div>${fbList}<div style="height:var(--s2);"></div>` : '';
+      const expanded = isOpen ? `<div class="task-expand" style="margin-top:var(--s3);padding-top:var(--s3);border-top:1px dashed var(--border);" onclick="event.stopPropagation()">
+          ${notesHtml}
           ${stepsHtml ? `<div style="font-size:0.6rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Steps</div><ol style="margin:0 0 var(--s3) 0;padding-left:0;list-style:none;">${stepsHtml}</ol>` : ''}
+          ${fbHtml}
           <div style="font-size:0.6rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Send to OpenClaw</div>
           <textarea id="task-fb-${t.id}" rows="2" placeholder="Stuck? Update? Question? Type and send..." class="chat-textarea" style="width:100%;margin-bottom:6px;font-size:var(--text-xs);min-height:54px;" onclick="event.stopPropagation()" onkeydown="event.stopPropagation();if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendTaskFeedback('${t.id}');}"></textarea>
           <div style="display:flex;gap:6px;justify-content:flex-end;">
