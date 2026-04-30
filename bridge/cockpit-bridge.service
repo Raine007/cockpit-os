@@ -25,6 +25,12 @@ Environment=BRIDGE_HEALTH_CHECK_MS=15000
 Environment=BRIDGE_LOG_LEVEL=info
 Environment=BRIDGE_MAX_TOOL_HOPS=4
 
+# Vault (Phase 2 + Phase 3). Tasks/Active.md ↔ server snapshot.
+# COCKPIT_VAULT_DRY_RUN=0 enables real disk writes (default is dry-run for safety).
+Environment=COCKPIT_VAULT_PATH=/mnt/f/Vault
+Environment=COCKPIT_VAULT_DRY_RUN=0
+Environment=COCKPIT_TASK_POLL_MS=30000
+
 # --- Pre-start: ensure the Windows-side Ollama is reachable on 127.0.0.1 -
 # socat forwards localhost:11434 inside WSL to the Windows host's Ollama.
 # Idempotent: only starts a new socat if none is already running.
