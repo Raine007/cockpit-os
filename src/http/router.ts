@@ -489,6 +489,10 @@ async function handlePostChatMessage(
   const role = (body.role as string | undefined) ?? 'user';
   if (!text || typeof text !== 'string') return badRequest('missing "text"');
   if (role !== 'user') return badRequest('role must be "user" for incoming messages');
+  const rawTab = body.context_tab as string | undefined;
+  const contextTab: 'today' | 'money' | 'flight' | undefined =
+    rawTab === 'today' || rawTab === 'money' || rawTab === 'flight' ? rawTab : undefined;
+  const tabContext = body.tab_context;
 
   const ctx = createContext({ uid: 'system', source: 'rpc' });
   const ts = new Date().toISOString();
@@ -496,6 +500,8 @@ async function handlePostChatMessage(
   const jobId = genId('job');
 
   const msg: ChatMessage = { id: messageId, text, role: 'user', ts };
+  if (contextTab) msg.context_tab = contextTab;
+  if (tabContext !== undefined && tabContext !== null) msg.tab_context = tabContext;
   await appendChatMessage(ctx, msg);
 
   const job: PendingJob = {
@@ -506,6 +512,8 @@ async function handlePostChatMessage(
     created_at: ts,
     updated_at: ts,
   };
+  if (contextTab) job.context_tab = contextTab;
+  if (tabContext !== undefined && tabContext !== null) job.tab_context = tabContext;
   await upsertPendingJob(ctx, job);
 
   return jsonResponse(200, { ok: true, message_id: messageId, job_id: jobId });

@@ -347,7 +347,72 @@ img,svg{display:block;max-width:100%;}
   display:flex;align-items:center;justify-content:center;
   border:1.5px solid var(--bg);
 }
-.nav-tab-wrap{position:relative;}
+.nav-tab-wrap{position:relative;flex:1;}
+
+/* ── TODAY SECTIONS ── */
+.today-section{
+  margin-bottom:32px;
+  padding-top:var(--s4);
+  border-top:1px solid var(--border);
+}
+.today-section:first-of-type{border-top:none;}
+.today-section-header{
+  font-size:1.05rem;font-weight:700;letter-spacing:-.02em;
+  color:var(--text);margin-bottom:var(--s4);
+}
+
+/* ── CHAT SECTION ── */
+.chat-section{
+  margin-top:var(--s6);
+  padding-top:var(--s4);
+  border-top:1px solid var(--border);
+  padding-bottom:calc(var(--s4) + 64px + env(safe-area-inset-bottom));
+}
+.chat-section-header{
+  font-size:.85rem;font-weight:600;color:var(--text-2);
+  margin-bottom:var(--s3);letter-spacing:.01em;
+}
+.chat-messages-list{
+  display:flex;flex-direction:column;gap:var(--s3);
+  overflow-y:auto;max-height:40vh;padding-bottom:var(--s3);
+}
+.chat-input-row{
+  display:flex;gap:var(--s3);align-items:flex-end;
+  margin-top:var(--s3);
+}
+.chat-textarea{
+  flex:1;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--r-md);padding:var(--s3) var(--s4);
+  color:var(--text);font-size:var(--text-sm);resize:none;
+  line-height:1.4;min-height:48px;max-height:120px;
+}
+.chat-send-btn{
+  background:var(--blue);color:#000;font-weight:600;
+  font-size:var(--text-sm);padding:0 var(--s5);
+  border-radius:var(--r-md);height:48px;flex-shrink:0;white-space:nowrap;
+}
+
+/* ── FEEDBACK BANNER ── */
+.feedback-banner{
+  border-left:3px solid var(--amber);
+  background:rgba(245,158,11,.08);
+  border-radius:0 var(--r-md) var(--r-md) 0;
+  padding:var(--s4);
+  margin-bottom:var(--s4);
+}
+.feedback-banner-inner{}
+.feedback-textarea{
+  width:100%;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--r-md);padding:var(--s3) var(--s4);
+  color:var(--text);font-size:var(--text-sm);resize:vertical;
+  min-height:72px;line-height:1.4;box-sizing:border-box;
+  margin-top:var(--s2);
+}
+.feedback-submit{
+  background:var(--amber);color:#000;font-weight:700;
+  font-size:var(--text-sm);padding:var(--s2) var(--s5);
+  border-radius:var(--r-md);border:none;cursor:pointer;
+}
 
 /* ── VIEWS ── */
 .view{display:none;animation:fadeUp .2s ease;}
@@ -776,27 +841,151 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     </div>
     <div id="quick-notes-list" style="margin-top:var(--s3);display:flex;flex-direction:column;gap:var(--s2);"></div>
   </div>
-</div>
 
-<!-- ══ SCHEDULE ══ -->
-<div class="view" id="view-schedule">
-  <div class="view-header">
-    <div class="view-title">Schedule</div>
-    <span style="font-family:'DM Mono',monospace;font-size:.7rem;color:var(--text-3);" id="sched-time-pill">—</span>
-  </div>
-  <div class="card">
-    <div class="accent-bar ab-silver"></div>
-    <div class="card-title">Day Progress</div>
-    <div class="day-bar"><div class="day-bar-fill" id="day-progress" style="width:0%"></div></div>
-    <div style="display:flex;justify-content:space-between;font-size:var(--text-xs);color:var(--text-3);font-family:'DM Mono',monospace;">
-      <span>7:45am</span><span>12pm</span><span>Midnight</span>
+  <!-- ── SCHEDULE SECTION (inlined) ── -->
+  <section class="today-section">
+    <div class="today-section-header">📅 Schedule</div>
+    <div class="card">
+      <div class="accent-bar ab-silver"></div>
+      <div class="card-title">Day Progress <span style="font-family:'DM Mono',monospace;font-size:.7rem;color:var(--text-3);font-weight:400;" id="sched-time-pill">—</span></div>
+      <div class="day-bar"><div class="day-bar-fill" id="day-progress" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:var(--text-xs);color:var(--text-3);font-family:'DM Mono',monospace;">
+        <span>7:45am</span><span>12pm</span><span>Midnight</span>
+      </div>
     </div>
-  </div>
-  <div class="guardrail hidden" id="guardrail"></div>
-  <div class="card">
-    <div class="accent-bar ab-blue"></div>
-    <div class="card-title">Today's Blocks</div>
-    <div id="sched-blocks"></div>
+    <div class="guardrail hidden" id="guardrail"></div>
+    <div class="card">
+      <div class="accent-bar ab-blue"></div>
+      <div class="card-title">Today's Blocks</div>
+      <div id="sched-blocks"></div>
+    </div>
+  </section>
+
+  <!-- ── CONTENT SECTION (inlined) ── -->
+  <section class="today-section">
+    <div class="today-section-header">📸 Content</div>
+    <div style="display:flex;gap:6px;margin-bottom:var(--s4);padding:0;">
+      <button class="ctab-btn active" id="ctab-reels" onclick="switchCTab('reels',this)">🎬 Reels</button>
+      <button class="ctab-btn" id="ctab-engage" onclick="switchCTab('engage',this)">💬 Engage</button>
+      <button class="ctab-btn" id="ctab-tasks" onclick="switchCTab('tasks',this)">✅ Tasks</button>
+      <button class="ctab-btn" id="ctab-caption" onclick="switchCTab('caption',this)">✏️ Caption</button>
+    </div>
+    <div id="cpanel-reels" class="cpanel active">
+      <div class="card">
+        <div class="accent-bar ab-blue"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s3);">
+          <div class="card-title" style="margin:0;">Reel Queue</div>
+          <span class="pill pill-green">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Post streak
+          </span>
+        </div>
+        <div id="reel-queue-list"></div>
+      </div>
+      <div class="card">
+        <div class="accent-bar ab-green"></div>
+        <div class="card-title">7-Day Post Streak</div>
+        <div style="display:flex;gap:var(--s2);margin-bottom:var(--s4);" id="streak-pips"></div>
+        <button class="btn-sm btn-ghost" onclick="markPostedToday()" style="width:100%;display:flex;justify-content:center;align-items:center;min-height:40px;">✓ Posted today</button>
+      </div>
+    </div>
+    <div id="cpanel-engage" class="cpanel">
+      <div class="card">
+        <div class="accent-bar" style="background:var(--amber);"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s2);">
+          <div class="card-title" style="margin:0;">Quora</div>
+          <span style="font-size:var(--text-xs);color:var(--text-3);" id="quora-done-count"></span>
+        </div>
+        <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">0-answer aviation questions. Answer in your voice. No ebook link in the post — drop it in bio only.</div>
+        <div id="quora-thread-list"></div>
+      </div>
+      <div class="card">
+        <div class="accent-bar" style="background:var(--crimson);"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s2);">
+          <div class="card-title" style="margin:0;">Reddit — Original Posts</div>
+          <span style="font-size:var(--text-xs);color:var(--text-3);" id="rpost-done-count"></span>
+        </div>
+        <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">First-person stories. Copy title + body. Pure story — no links, no pitches. Bio only.</div>
+        <div id="reddit-posts-list"></div>
+      </div>
+      <div class="card">
+        <div class="accent-bar ab-crimson"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s2);">
+          <div class="card-title" style="margin:0;">Reddit — Live Threads</div>
+          <span style="font-size:var(--text-xs);color:var(--text-3);" id="reddit-done-count"></span>
+        </div>
+        <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">Drop a genuine comment on each. Mention ebook only if it naturally fits. Resets tomorrow.</div>
+        <div id="reddit-thread-list"></div>
+      </div>
+    </div>
+    <div id="cpanel-tasks" class="cpanel">
+      <div class="card">
+        <div class="accent-bar ab-blue"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s3);">
+          <div class="card-title" style="margin:0;">Content Tasks</div>
+          <span style="font-size:var(--text-xs);color:var(--text-3);" id="ctask-count"></span>
+        </div>
+        <div id="content-task-list"></div>
+      </div>
+    </div>
+    <div id="cpanel-caption" class="cpanel">
+      <div class="card">
+        <div class="accent-bar ab-silver"></div>
+        <div class="card-title">Caption Draft</div>
+        <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">Hook · Value · CTA. Rough and real — no emojis, no "u201c". 3-4 hashtags max.</div>
+        <textarea class="note-area" id="caption-draft" placeholder="Write your hook first. Make it stop the scroll." rows="6" oninput="ss('caption_draft',this.value);updateCharCount()"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--s2);">
+          <span class="pill pill-silver" id="charcount">0 chars</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-sm btn-ghost" onclick="navigator.clipboard.writeText(document.getElementById('caption-draft').value).then(()=>toast('Caption copied'))" style="min-height:unset;">Copy</button>
+            <button class="btn-sm btn-ghost" onclick="clearCaption()" style="min-height:unset;">Clear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── DISCIPLINE SECTION (inlined) ── -->
+  <section class="today-section">
+    <div class="today-section-header">🎯 Discipline <span class="pill" id="disc-grade" style="background:var(--blue-dim);color:var(--blue);vertical-align:middle;">—</span></div>
+    <div class="card">
+      <div class="accent-bar ab-blue"></div>
+      <div class="score-hero">
+        <div class="score-num" id="disc-score">0</div>
+        <div class="score-sub" id="disc-score-label">/100 — Start checking off</div>
+      </div>
+      <div id="disc-factors"></div>
+    </div>
+    <div class="card">
+      <div class="accent-bar ab-silver"></div>
+      <div class="card-title">This Week</div>
+      <div class="week-grid" id="week-grid"></div>
+    </div>
+    <div class="card">
+      <div class="accent-bar ab-crimson"></div>
+      <div class="card-title">Hard Rules</div>
+      <div style="display:flex;flex-direction:column;gap:var(--s3);">
+        <div class="task-chip"><div class="task-chip-check" style="pointer-events:none;border-color:var(--blue);"></div><div class="task-chip-text"><div style="font-weight:600;">Leave by 7:35am — school at 7:45</div><div class="task-chip-cat">10 min to get there. No snooze.</div></div></div>
+        <div class="task-chip" style="border-color:var(--crimson);"><div class="task-chip-check" style="pointer-events:none;border-color:var(--crimson);"></div><div class="task-chip-text"><div style="font-weight:600;color:var(--crimson);">Midnight hard stop</div><div class="task-chip-cat">Phone down. Sleep = performance.</div></div></div>
+        <div class="task-chip"><div class="task-chip-check" style="pointer-events:none;border-color:var(--blue);"></div><div class="task-chip-text"><div style="font-weight:600;">1 task minimum per day</div><div class="task-chip-cat">Non-negotiable.</div></div></div>
+        <div class="task-chip" style="border-color:var(--crimson);"><div class="task-chip-check" style="pointer-events:none;border-color:var(--crimson);"></div><div class="task-chip-text"><div style="font-weight:600;color:var(--crimson);">Kill Gemini CC before new spending</div><div class="task-chip-cat">33% APR is hemorrhaging money.</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FEEDBACK BANNER (today) ── -->
+  <div class="feedback-banner" id="feedback-banner-today" style="display:none;"></div>
+
+  <!-- ── CHAT SECTION (today) ── -->
+  <div class="chat-section" id="chat-today">
+    <div class="chat-section-header">💬 Chat with OpenClaw
+      <div id="chat-typing-indicator" style="display:none;font-size:var(--text-xs);color:var(--text-3);display:inline-block;margin-left:8px;">🦞 thinking…</div>
+    </div>
+    <div class="chat-messages-list" id="chat-messages-today" aria-live="polite"></div>
+    <div class="chat-input-row">
+      <textarea id="chat-input-today" rows="2" placeholder="Message OpenClaw…" class="chat-textarea" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage('today');}"></textarea>
+      <button onclick="sendChatMessage('today')" class="chat-send-btn">Send</button>
+    </div>
   </div>
 </div>
 
@@ -921,6 +1110,19 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     </div>
     <div class="ledger" id="job-ledger" style="margin-top:var(--s3);"></div>
   </div>
+
+  <!-- ── FEEDBACK BANNER (money) ── -->
+  <div class="feedback-banner" id="feedback-banner-money" style="display:none;"></div>
+
+  <!-- ── CHAT SECTION (money) ── -->
+  <div class="chat-section" id="chat-money">
+    <div class="chat-section-header">💬 Chat with OpenClaw</div>
+    <div class="chat-messages-list" id="chat-messages-money" aria-live="polite"></div>
+    <div class="chat-input-row">
+      <textarea id="chat-input-money" rows="2" placeholder="Message OpenClaw…" class="chat-textarea" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage('money');}"></textarea>
+      <button onclick="sendChatMessage('money')" class="chat-send-btn">Send</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══ FLIGHT ══ -->
@@ -965,211 +1167,39 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     <textarea class="note-area" id="cfi-notes" placeholder="Log what your CFI said, what you worked on, areas to improve..." rows="5" oninput="ss('cfi_notes',this.value)"></textarea>
     <div style="font-size:var(--text-xs);color:var(--text-3);margin-top:var(--s2);">Private — only you see this.</div>
   </div>
-</div>
 
-<!-- ══ CONTENT ══ -->
-<div class="view" id="view-content">
-  <div class="view-header">
-    <div class="view-title">@cockpit.grind</div>
-    <span class="pill pill-blue" id="content-reel-pill">Queue</span>
-  </div>
+  <!-- ── FEEDBACK BANNER (flight) ── -->
+  <div class="feedback-banner" id="feedback-banner-flight" style="display:none;"></div>
 
-  <!-- Inner sub-tabs -->
-  <div style="display:flex;gap:6px;margin-bottom:var(--s4);padding:0;">
-    <button class="ctab-btn active" id="ctab-reels" onclick="switchCTab('reels',this)">🎬 Reels</button>
-    <button class="ctab-btn" id="ctab-engage" onclick="switchCTab('engage',this)">💬 Engage</button>
-    <button class="ctab-btn" id="ctab-tasks" onclick="switchCTab('tasks',this)">✅ Tasks</button>
-    <button class="ctab-btn" id="ctab-caption" onclick="switchCTab('caption',this)">✏️ Caption</button>
-  </div>
-
-  <!-- REELS panel -->
-  <div id="cpanel-reels" class="cpanel active">
-    <div class="card">
-      <div class="accent-bar ab-blue"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s3);">
-        <div class="card-title" style="margin:0;">Reel Queue</div>
-        <span class="pill pill-green">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          Post streak
-        </span>
-      </div>
-      <div id="reel-queue-list"></div>
-    </div>
-
-    <!-- 7-day streak -->
-    <div class="card">
-      <div class="accent-bar ab-green"></div>
-      <div class="card-title">7-Day Post Streak</div>
-      <div style="display:flex;gap:var(--s2);margin-bottom:var(--s4);" id="streak-pips"></div>
-      <button class="btn-sm btn-ghost" onclick="markPostedToday()" style="width:100%;display:flex;justify-content:center;align-items:center;min-height:40px;">✓ Posted today</button>
-    </div>
-  </div>
-
-  <!-- ENGAGE panel -->
-  <div id="cpanel-engage" class="cpanel">
-    <!-- Quora -->
-    <div class="card">
-      <div class="accent-bar" style="background:var(--amber);"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s2);">
-        <div class="card-title" style="margin:0;">Quora</div>
-        <span style="font-size:var(--text-xs);color:var(--text-3);" id="quora-done-count"></span>
-      </div>
-      <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">0-answer aviation questions. Answer in your voice. No ebook link in the post — drop it in bio only.</div>
-      <div id="quora-thread-list"></div>
-    </div>
-
-    <!-- Reddit Posts -->
-    <div class="card">
-      <div class="accent-bar" style="background:var(--crimson);"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s2);">
-        <div class="card-title" style="margin:0;">Reddit — Original Posts</div>
-        <span style="font-size:var(--text-xs);color:var(--text-3);" id="rpost-done-count"></span>
-      </div>
-      <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">First-person stories. Copy title + body. Pure story — no links, no pitches. Bio only.</div>
-      <div id="reddit-posts-list"></div>
-    </div>
-
-    <!-- Reddit Comments -->
-    <div class="card">
-      <div class="accent-bar ab-crimson"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s2);">
-        <div class="card-title" style="margin:0;">Reddit — Live Threads</div>
-        <span style="font-size:var(--text-xs);color:var(--text-3);" id="reddit-done-count"></span>
-      </div>
-      <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">Drop a genuine comment on each. Mention ebook only if it naturally fits. Resets tomorrow.</div>
-      <div id="reddit-thread-list"></div>
-    </div>
-  </div>
-
-  <!-- TASKS panel -->
-  <div id="cpanel-tasks" class="cpanel">
-    <div class="card">
-      <div class="accent-bar ab-blue"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s3);">
-        <div class="card-title" style="margin:0;">Content Tasks</div>
-        <span style="font-size:var(--text-xs);color:var(--text-3);" id="ctask-count"></span>
-      </div>
-      <div id="content-task-list"></div>
-    </div>
-  </div>
-
-  <!-- CAPTION panel -->
-  <div id="cpanel-caption" class="cpanel">
-    <div class="card">
-      <div class="accent-bar ab-silver"></div>
-      <div class="card-title">Caption Draft</div>
-      <div style="font-size:var(--text-xs);color:var(--text-3);margin-bottom:var(--s3);">Hook · Value · CTA. Rough and real — no emojis, no "u201c". 3-4 hashtags max.</div>
-      <textarea class="note-area" id="caption-draft" placeholder="Write your hook first. Make it stop the scroll." rows="6" oninput="ss('caption_draft',this.value);updateCharCount()"></textarea>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--s2);">
-        <span class="pill pill-silver" id="charcount">0 chars</span>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-sm btn-ghost" onclick="navigator.clipboard.writeText(document.getElementById('caption-draft').value).then(()=>toast('Caption copied'))" style="min-height:unset;">Copy</button>
-          <button class="btn-sm btn-ghost" onclick="clearCaption()" style="min-height:unset;">Clear</button>
-        </div>
-      </div>
+  <!-- ── CHAT SECTION (flight) ── -->
+  <div class="chat-section" id="chat-flight">
+    <div class="chat-section-header">💬 Chat with OpenClaw</div>
+    <div class="chat-messages-list" id="chat-messages-flight" aria-live="polite"></div>
+    <div class="chat-input-row">
+      <textarea id="chat-input-flight" rows="2" placeholder="Message OpenClaw…" class="chat-textarea" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage('flight');}"></textarea>
+      <button onclick="sendChatMessage('flight')" class="chat-send-btn">Send</button>
     </div>
   </div>
 </div>
 
-<!-- ══ DISCIPLINE ══ -->
-<div class="view" id="view-discipline">
-  <div class="view-header">
-    <div class="view-title">Discipline</div>
-    <span class="pill" id="disc-grade" style="background:var(--blue-dim);color:var(--blue);">—</span>
-  </div>
-
-  <div class="card">
-    <div class="accent-bar ab-blue"></div>
-    <div class="score-hero">
-      <div class="score-num" id="disc-score">0</div>
-      <div class="score-sub" id="disc-score-label">/100 — Start checking off</div>
-    </div>
-    <div id="disc-factors"></div>
-  </div>
-
-  <div class="card">
-    <div class="accent-bar ab-silver"></div>
-    <div class="card-title">This Week</div>
-    <div class="week-grid" id="week-grid"></div>
-  </div>
-
-  <div class="card">
-    <div class="accent-bar ab-crimson"></div>
-    <div class="card-title">Hard Rules</div>
-    <div style="display:flex;flex-direction:column;gap:var(--s3);">
-      <div class="task-chip"><div class="task-chip-check" style="pointer-events:none;border-color:var(--blue);"></div><div class="task-chip-text"><div style="font-weight:600;">Leave by 7:35am — school at 7:45</div><div class="task-chip-cat">10 min to get there. No snooze.</div></div></div>
-      <div class="task-chip" style="border-color:var(--crimson);"><div class="task-chip-check" style="pointer-events:none;border-color:var(--crimson);"></div><div class="task-chip-text"><div style="font-weight:600;color:var(--crimson);">Midnight hard stop</div><div class="task-chip-cat">Phone down. Sleep = performance.</div></div></div>
-      <div class="task-chip"><div class="task-chip-check" style="pointer-events:none;border-color:var(--blue);"></div><div class="task-chip-text"><div style="font-weight:600;">1 task minimum per day</div><div class="task-chip-cat">Non-negotiable.</div></div></div>
-      <div class="task-chip" style="border-color:var(--crimson);"><div class="task-chip-check" style="pointer-events:none;border-color:var(--crimson);"></div><div class="task-chip-text"><div style="font-weight:600;color:var(--crimson);">Kill Gemini CC before new spending</div><div class="task-chip-cat">33% APR is hemorrhaging money.</div></div></div>
-    </div>
-  </div>
-</div>
-
-<!-- CHAT VIEW -->
-<div class="view" id="view-chat">
-  <div class="view-header">
-    <div class="view-title">💬 Chat</div>
-    <div id="chat-typing-indicator" style="display:none;font-size:var(--text-xs);color:var(--text-3);margin-top:2px;">🦞 OpenClaw is thinking…</div>
-  </div>
-  <!-- Message list -->
-  <div id="chat-messages-list" style="display:flex;flex-direction:column;gap:var(--s3);overflow-y:auto;max-height:calc(100dvh - 280px);padding-bottom:var(--s4);" aria-live="polite">
-    <!-- Messages rendered here -->
-  </div>
-  <!-- Input area -->
-  <div style="position:sticky;bottom:0;background:var(--bg);padding:var(--s4) 0 var(--s2);display:flex;gap:var(--s3);align-items:flex-end;">
-    <textarea id="chat-input" rows="2" placeholder="Message OpenClaw…" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s3) var(--s4);color:var(--text);font-size:var(--text-sm);resize:none;line-height:1.4;min-height:48px;max-height:120px;" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage();}"></textarea>
-    <button onclick="sendChatMessage()" style="background:var(--blue);color:#000;font-weight:600;font-size:var(--text-sm);padding:0 var(--s5);border-radius:var(--r-md);height:48px;flex-shrink:0;white-space:nowrap;">Send</button>
-  </div>
-</div>
-
-<!-- FEEDBACK VIEW -->
-<div class="view" id="view-feedback">
-  <div class="view-header">
-    <div class="view-title">❓ Feedback</div>
-    <div style="font-size:var(--text-xs);color:var(--text-3);margin-top:2px;">OpenClaw asks here when it needs clarification</div>
-  </div>
-  <div id="feedback-list">
-    <div id="feedback-empty-state" style="text-align:center;padding:var(--s10) 0;color:var(--text-3);font-size:var(--text-sm);">No feedback requested. OpenClaw will ask here when it needs clarification.</div>
-  </div>
-</div>
+<!-- Old views removed — content/discipline inlined into today-section, chat/feedback replaced by per-tab chat-section and feedback-banner -->
 
 </div><!-- /app -->
 
 <!-- NAV -->
 <nav class="nav-tabs">
-  <button class="nav-tab active" data-view="today" onclick="switchView('today',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Today
-  </button>
-  <button class="nav-tab" data-view="schedule" onclick="switchView('schedule',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Schedule
-  </button>
-  <button class="nav-tab" data-view="money" onclick="switchView('money',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Money
-  </button>
-  <button class="nav-tab" data-view="flight" onclick="switchView('flight',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L12 12M21 3H15M21 3V9"/><path d="M3 14l4-4 4 4 4-4 4 4"/><path d="M2 19h20"/></svg>Flight
-  </button>
-  <div class="nav-tab-wrap">
-    <button class="nav-tab" data-view="content" onclick="switchView('content',this)" style="position:relative;">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>Content
-      <div class="badge" id="content-badge" style="display:none;">5</div>
-    </button>
-  </div>
-  <button class="nav-tab" data-view="discipline" onclick="switchView('discipline',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Discipline
-  </button>
-  <div class="nav-tab-wrap">
-    <button class="nav-tab" data-view="chat" onclick="switchView('chat',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>Chat
+  <div class="nav-tab-wrap" style="flex:1;">
+    <button class="nav-tab active" data-view="today" onclick="switchView('today',this)" style="width:100%;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Today
       <div class="badge" id="chat-badge" style="display:none;">!</div>
     </button>
   </div>
-  <div class="nav-tab-wrap">
-    <button class="nav-tab" data-view="feedback" onclick="switchView('feedback',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Feedback
-      <div class="badge" id="feedback-badge" style="display:none;">!</div>
-    </button>
-  </div>
+  <button class="nav-tab" data-view="money" onclick="switchView('money',this)" style="flex:1;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Money
+  </button>
+  <button class="nav-tab" data-view="flight" onclick="switchView('flight',this)" style="flex:1;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L12 12M21 3H15M21 3V9"/><path d="M3 14l4-4 4 4 4-4 4 4"/><path d="M2 19h20"/></svg>Flight
+  </button>
 </nav>
 
 <script>
@@ -1192,12 +1222,15 @@ function switchView(name,btn){
   document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   btn.classList.add('active');
-  if(name==='schedule')renderSchedule();
+  if(name==='today'){ renderSchedule(); renderContent(); renderDiscipline(); }
   if(name==='money')renderMoney();
-  if(name==='content')renderContent();
-  if(name==='discipline')renderDiscipline();
-  if(name==='chat'){ renderChatMessages(_chatMessages); scrollChatToBottom(); }
-  if(name==='feedback')renderFeedbackList(_feedbackRequests);
+  // Render chat messages to all lists and scroll the active tab's chat to bottom
+  renderChatMessages(_chatMessages);
+  scrollChatToBottom(name);
+  // Update feedback banner for the newly active tab
+  renderFeedbackBanner(name, _feedbackRequests);
+  // Clear badge when switching to today (chat lives there)
+  if(name==='today') _clearChatBadge();
 }
 
 // ── CHAT ──
@@ -1212,9 +1245,7 @@ function _chatApiHeaders(){
   return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 }
 
-function renderChatMessages(msgs){
-  const list = document.getElementById('chat-messages-list');
-  if(!list) return;
+function _buildChatRows(msgs, list){
   list.innerHTML = '';
   (msgs||[]).forEach(function(m){
     const isUser = m.role === 'user';
@@ -1232,6 +1263,13 @@ function renderChatMessages(msgs){
     row.innerHTML = senderHtml + '<div class="' + bubbleClass + '">' + text + '</div><div class="chat-bubble-meta">' + time + '</div>';
     list.appendChild(row);
   });
+}
+function renderChatMessages(msgs){
+  // Render the shared conversation into all three per-tab message lists
+  ['today','money','flight'].forEach(function(tab){
+    const list = document.getElementById('chat-messages-' + tab);
+    if(list) _buildChatRows(msgs, list);
+  });
   _updateChatTypingIndicator();
 }
 
@@ -1243,30 +1281,56 @@ function _updateChatTypingIndicator(){
   indicator.style.display = hasQueued ? 'block' : 'none';
 }
 
-function scrollChatToBottom(){
-  const list = document.getElementById('chat-messages-list');
-  if(list) list.scrollTop = list.scrollHeight;
+function scrollChatToBottom(tab){
+  // Scroll the specified tab's list, or all lists if no tab given
+  const tabs = tab ? [tab] : ['today','money','flight'];
+  tabs.forEach(function(t){
+    const list = document.getElementById('chat-messages-' + t);
+    if(list) list.scrollTop = list.scrollHeight;
+  });
 }
 
-async function sendChatMessage(){
-  const input = document.getElementById('chat-input');
+async function sendChatMessage(tab){
+  // tab: 'today' | 'money' | 'flight'
+  const inputId = 'chat-input-' + (tab||'today');
+  const input = document.getElementById(inputId);
+  if(!input) return;
   const text = (input.value||'').trim();
   if(!text) return;
   input.value = '';
   const token = localStorage.getItem('_cockpit_admin_token')||'';
   if(!token){ toast('⚠ Not authenticated'); return; }
+  // Build tab_context snapshot from localStorage
+  let tab_context = null;
+  try {
+    const today = todayKey();
+    if(tab === 'today'){
+      tab_context = {
+        tasks: ls('tasks_'+today, []),
+        schedule: ls('schedule_'+today, []),
+        caption_draft: ls('caption_draft', null)
+      };
+    } else if(tab === 'money'){
+      tab_context = {
+        holdings: ls('holdings', []),
+        budget: ls('monthly_budget', null)
+      };
+    } else if(tab === 'flight'){
+      tab_context = { flight_log: ls('flight_log', []) };
+    }
+  } catch(e){ tab_context = null; }
   try {
     const res = await fetch('/api/chat/message', {
       method: 'POST',
       headers: _chatApiHeaders(),
-      body: JSON.stringify({ text: text, role: 'user' })
+      body: JSON.stringify({ text: text, role: 'user', context_tab: tab||'today', tab_context: tab_context })
     });
     const j = await res.json();
     if(j.ok){
       // Optimistically append
       _chatMessages.push({ id: j.message_id, text: text, role: 'user', ts: new Date().toISOString() });
       renderChatMessages(_chatMessages);
-      scrollChatToBottom();
+      scrollChatToBottom(tab);
     } else {
       toast('⚠ ' + (j.error||'Send failed'));
     }
@@ -1288,14 +1352,16 @@ async function _pollChatMessages(){
       });
       _chatMessages.sort(function(a,b){ return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; });
       _chatLastTs = _chatMessages[_chatMessages.length-1].ts;
-      const chatView = document.getElementById('view-chat');
-      if(chatView && chatView.classList.contains('active')){
-        renderChatMessages(_chatMessages);
-        scrollChatToBottom();
-      }
-      // Update badge if not on chat tab
+      // Render into all three per-tab lists
+      renderChatMessages(_chatMessages);
+      // Find which tab is active and scroll it
+      const activeView = document.querySelector('.view.active');
+      const activeTab = activeView ? activeView.id.replace('view-','') : 'today';
+      scrollChatToBottom(activeTab);
+      // Update badge if not on today tab (chat badge lives on today)
+      const todayView = document.getElementById('view-today');
       const chatBadge = document.getElementById('chat-badge');
-      if(chatBadge && (!chatView || !chatView.classList.contains('active'))){
+      if(chatBadge && (!todayView || !todayView.classList.contains('active'))){
         chatBadge.style.display = 'flex';
       }
     }
@@ -1315,29 +1381,41 @@ function _clearChatBadge(){
 
 // ── FEEDBACK ──
 
-function renderFeedbackList(reqs){
-  const list = document.getElementById('feedback-list');
-  if(!list) return;
+// Render feedback requests as banners in the specified tab's banner div.
+// Shows first pending request inline; collapses extras into a "+ N more" note.
+function renderFeedbackBanner(tab, reqs){
+  const bannerId = 'feedback-banner-' + tab;
+  const banner = document.getElementById(bannerId);
+  if(!banner) return;
   const pending = (reqs||[]).filter(function(r){ return !r.resolved; });
-  const emptyEl = document.getElementById('feedback-empty-state');
   if(!pending.length){
-    if(emptyEl) emptyEl.style.display = 'block';
-    // Remove any existing cards
-    list.querySelectorAll('.feedback-card').forEach(function(el){ el.remove(); });
+    banner.style.display = 'none';
+    banner.innerHTML = '';
     return;
   }
-  if(emptyEl) emptyEl.style.display = 'none';
-  // Rebuild cards
-  list.querySelectorAll('.feedback-card').forEach(function(el){ el.remove(); });
-  pending.forEach(function(r){
-    const card = document.createElement('div');
-    card.className = 'feedback-card';
-    card.setAttribute('data-fbid', r.id);
-    const q = (r.question||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    card.innerHTML = '<div class="feedback-question"><strong>🦞 OpenClaw asks:</strong><br>' + q + '</div>' +
-      '<textarea class="feedback-textarea" placeholder="Your answer…" id="fb-ans-' + r.id + '"></textarea>' +
-      '<button class="feedback-submit" onclick="submitFeedbackAnswer(\'' + r.id + '\');">Submit Answer</button>';
-    list.appendChild(card);
+  banner.style.display = 'block';
+  const first = pending[0];
+  const rest = pending.length - 1;
+  const q = (first.question||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let html = '<div class="feedback-banner-inner">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:var(--s2);">' +
+    '<span style="font-size:var(--text-xs);font-weight:700;color:var(--amber);">🦞 OpenClaw asks:</span>' +
+    '<button onclick="document.getElementById(\'' + bannerId + '\').style.display=\'none\'" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:1rem;line-height:1;padding:0;">✕</button>' +
+    '</div>' +
+    '<div style="font-size:var(--text-sm);color:var(--text);margin-bottom:var(--s3);line-height:1.5;">' + q + '</div>' +
+    '<textarea class="feedback-textarea" placeholder="Your answer…" id="fb-ans-' + first.id + '"></textarea>' +
+    '<div style="display:flex;align-items:center;gap:var(--s3);margin-top:var(--s2);">' +
+    '<button class="feedback-submit" onclick="submitFeedbackAnswer(\'' + first.id + '\');">Submit Answer</button>' +
+    (rest > 0 ? '<span style="font-size:var(--text-xs);color:var(--text-3);">+ ' + rest + ' more</span>' : '') +
+    '</div></div>';
+  banner.innerHTML = html;
+}
+
+// Legacy alias — called by submitFeedbackAnswer after resolving
+function renderFeedbackList(reqs){
+  // Re-render banners in whichever tabs are visible
+  ['today','money','flight'].forEach(function(tab){
+    renderFeedbackBanner(tab, reqs);
   });
 }
 
@@ -1360,9 +1438,6 @@ async function submitFeedbackAnswer(feedbackId){
       const req = _feedbackRequests.find(function(r){ return r.id===feedbackId; });
       if(req) req.resolved = true;
       renderFeedbackList(_feedbackRequests);
-      const b = document.getElementById('feedback-badge');
-      const stillPending = _feedbackRequests.filter(function(r){ return !r.resolved; }).length;
-      if(b) b.style.display = stillPending ? 'flex' : 'none';
     } else {
       toast('⚠ ' + (j.error||'Submit failed'));
     }
@@ -1377,14 +1452,17 @@ async function _pollFeedback(){
     const j = await res.json();
     if(!j.ok) return;
     _feedbackRequests = j.feedback_requests || [];
-    const feedbackView = document.getElementById('view-feedback');
-    if(feedbackView && feedbackView.classList.contains('active')){
-      renderFeedbackList(_feedbackRequests);
-    }
-    // Update badge
+    // Render banner in the currently active tab
+    const activeView = document.querySelector('.view.active');
+    const activeTab = activeView ? activeView.id.replace('view-','') : 'today';
+    renderFeedbackBanner(activeTab, _feedbackRequests);
+    // Show chat badge on Today tab if there are pending requests and we're not on today
     const pending = _feedbackRequests.filter(function(r){ return !r.resolved; });
-    const b = document.getElementById('feedback-badge');
-    if(b) b.style.display = pending.length ? 'flex' : 'none';
+    const todayView = document.getElementById('view-today');
+    const chatBadge = document.getElementById('chat-badge');
+    if(chatBadge && pending.length && (!todayView || !todayView.classList.contains('active'))){
+      chatBadge.style.display = 'flex';
+    }
   } catch(e){ /* ignore */ }
 }
 
@@ -3007,11 +3085,16 @@ if(typeof window._updateSyncDot === 'undefined'){
 // Cockpit Backend Sync Layer script above via its own DOMContentLoaded handler.
 document.addEventListener('DOMContentLoaded',()=>{
   renderToday();
+  renderSchedule();
+  renderContent();
+  renderDiscipline();
   renderInvestments();
   // Fetch live prices async — updates UI when done
   fetchLivePrices();
+  // Refresh schedule every minute (it's now always visible in Today)
   setInterval(()=>{
-    if(document.getElementById('view-schedule').classList.contains('active'))renderSchedule();
+    const todayView = document.getElementById('view-today');
+    if(todayView && todayView.classList.contains('active')) renderSchedule();
   },60000);
   // Refresh prices every 15 minutes if app stays open
   setInterval(fetchLivePrices, 15*60*1000);

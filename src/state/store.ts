@@ -93,6 +93,8 @@ export interface ChatMessage {
   ts: string;
   message_id?: string;      // links a reply back to the original
   task_created?: { todoist_id: string; project: string };
+  context_tab?: 'today' | 'money' | 'flight';
+  tab_context?: unknown;
 }
 
 export interface PendingJob {
@@ -106,6 +108,8 @@ export interface PendingJob {
   reason?: string;
   task_payload?: unknown;
   feedback_answer?: string;
+  context_tab?: 'today' | 'money' | 'flight';
+  tab_context?: unknown;
 }
 
 export interface FeedbackRequest {
