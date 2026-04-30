@@ -403,6 +403,12 @@ img,svg{display:block;max-width:100%;}
 }
 .composer-tab:hover{color:var(--text-2);}
 .composer-tab.active{color:var(--blue);border-bottom-color:var(--blue);}
+.chat-bubble-note{
+  background:rgba(245,158,11,.10) !important;
+  border-left:2px solid var(--amber) !important;
+  color:var(--text) !important;
+}
+.claw-stream-card{padding-bottom:var(--s3);}
 
 /* ── FEEDBACK BANNER ── */
 .feedback-banner{
@@ -797,16 +803,34 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     <div id="offload-status" style="font-size:var(--text-xs);color:var(--amber);text-align:right;padding-right:4px;min-height:1em;"></div>
   </div>
 
-  <!-- ── DISCIPLINE / TODAY'S REAL TASKS (top of Today) ── -->
+  <!-- ── OPENCLAW STREAM (former score-block slot) — chat + notes unified ── -->
   <section class="today-section" style="margin-top:0;">
-    <div class="today-section-header">🎯 Today's Real Tasks <span class="pill" id="disc-grade" style="background:var(--blue-dim);color:var(--blue);vertical-align:middle;">—</span></div>
-    <div class="card">
+    <div class="today-section-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>🦞 OpenClaw <span id="chat-typing-indicator" style="display:none;font-size:var(--text-xs);color:var(--text-3);margin-left:6px;font-weight:400;text-transform:none;letter-spacing:0;">thinking…</span></span>
+      <span style="display:flex;gap:6px;align-items:center;">
+        <span class="pill" id="disc-grade" style="background:var(--blue-dim);color:var(--blue);font-size:0.6rem;">—</span>
+        <span id="disc-score-label" style="font-size:var(--text-xs);color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;">—</span>
+        <span id="disc-score" style="display:none;">0</span>
+      </span>
+    </div>
+    <div class="card claw-stream-card">
       <div class="accent-bar ab-blue"></div>
-      <div class="score-hero">
-        <div class="score-num" id="disc-score">0</div>
-        <div class="score-sub" id="disc-score-label">/100 — Start checking off</div>
+      <div class="chat-messages-list" id="chat-messages-today" aria-live="polite" style="max-height:38vh;min-height:120px;overflow-y:auto;padding:var(--s2) 0;"></div>
+      <div id="claw-empty" style="display:none;text-align:center;padding:var(--s4) var(--s3);color:var(--text-3);font-size:var(--text-xs);line-height:1.6;">Talk to OpenClaw or drop a note. Both land here — it processes everything.</div>
+      <div class="composer-tabs" style="margin-top:var(--s3);margin-bottom:var(--s2);">
+        <button class="composer-tab active" data-mode="chat" onclick="setComposerMode('chat',this)">💬 Message</button>
+        <button class="composer-tab" data-mode="note" onclick="setComposerMode('note',this)">📝 Note</button>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="composer-input" rows="2" placeholder="Message OpenClaw…" class="chat-textarea" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitComposer();}"></textarea>
+        <button onclick="submitComposer()" class="chat-send-btn" id="composer-send-btn">Send</button>
       </div>
     </div>
+  </section>
+
+  <!-- ── TODAY'S REAL TASKS ── -->
+  <section class="today-section">
+    <div class="today-section-header">🎯 Today's Real Tasks</div>
     <div class="card">
       <div class="accent-bar ab-amber"></div>
       <div class="card-title" style="justify-content:space-between;">
@@ -941,21 +965,11 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
   <!-- ── FEEDBACK BANNER (today) ── -->
   <div class="feedback-banner" id="feedback-banner-today" style="display:none;"></div>
 
-  <!-- ── UNIFIED COMPOSER (today): notes + OpenClaw chat in one input ── -->
-  <div class="chat-section" id="chat-today">
-    <div class="composer-tabs">
-      <button class="composer-tab active" data-mode="chat" onclick="setComposerMode('chat',this)">💬 Chat with OpenClaw <span id="chat-typing-indicator" style="display:none;font-size:var(--text-xs);color:var(--text-3);margin-left:6px;">🦞 thinking…</span></button>
-      <button class="composer-tab" data-mode="note" onclick="setComposerMode('note',this)">📝 Note for the day</button>
-    </div>
-    <div class="chat-messages-list" id="chat-messages-today" aria-live="polite"></div>
-    <div id="composer-notes-list" style="display:none;flex-direction:column;gap:var(--s2);max-height:40vh;overflow-y:auto;padding:var(--s2);"></div>
-    <div class="chat-input-row">
-      <textarea id="composer-input" rows="2" placeholder="Message OpenClaw…" class="chat-textarea" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitComposer();}"></textarea>
-      <button onclick="submitComposer()" class="chat-send-btn" id="composer-send-btn">Send</button>
-    </div>
-    <!-- legacy ids kept for compatibility -->
-    <textarea id="chat-input-today" style="display:none;"></textarea>
-    <input type="text" id="quick-note-input" style="display:none;"/>
+  <!-- legacy ids kept for compatibility — live composer is the OpenClaw stream up top -->
+  <div style="display:none;" aria-hidden="true">
+    <textarea id="chat-input-today"></textarea>
+    <input type="text" id="quick-note-input"/>
+    <div id="composer-notes-list"></div>
   </div>
 </div>
 
@@ -1217,19 +1231,33 @@ function _chatApiHeaders(){
 
 function _buildChatRows(msgs, list){
   list.innerHTML = '';
-  (msgs||[]).forEach(function(m){
+  const items = msgs || [];
+  if(!items.length){
+    const empty = document.getElementById('claw-empty');
+    if(empty) empty.style.display = 'block';
+    return;
+  }
+  const empty = document.getElementById('claw-empty');
+  if(empty) empty.style.display = 'none';
+  items.forEach(function(m){
+    const rawText = m.text || '';
+    const isNote = rawText.startsWith('[note]');
+    const displayText = isNote ? rawText.replace(/^\[note\]\s*/, '') : rawText;
     const isUser = m.role === 'user';
     const isComputer = m.role === 'computer';
     const row = document.createElement('div');
     row.className = 'chat-row ' + (isUser ? 'chat-row-user' : isComputer ? 'chat-row-computer' : 'chat-row-agent');
     let senderHtml = '';
-    if(!isUser){
+    if(isNote && isUser){
+      senderHtml = '<div class="chat-sender" style="color:var(--amber);">📝 Note</div>';
+    } else if(!isUser){
       const label = isComputer ? '🤖 Computer' : '🦞 OpenClaw';
       senderHtml = '<div class="chat-sender">' + label + '</div>';
     }
-    const bubbleClass = 'chat-bubble ' + (isUser ? 'chat-bubble-user' : isComputer ? 'chat-bubble-computer' : 'chat-bubble-agent');
+    let bubbleClass = 'chat-bubble ' + (isUser ? 'chat-bubble-user' : isComputer ? 'chat-bubble-computer' : 'chat-bubble-agent');
+    if(isNote) bubbleClass += ' chat-bubble-note';
     const time = m.ts ? new Date(m.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
-    const text = (m.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    const text = displayText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
     row.innerHTML = senderHtml + '<div class="' + bubbleClass + '">' + text + '</div><div class="chat-bubble-meta">' + time + '</div>';
     list.appendChild(row);
   });
@@ -1858,20 +1886,41 @@ function categorizeNote(text){
   for(const c of NOTE_CATS){if(c.keywords.some(k=>lower.includes(k)))return c.label;}
   return'General';
 }
-function addQuickNote(){
+async function addQuickNote(){
   const composer=document.getElementById('composer-input');
   const legacy=document.getElementById('quick-note-input');
   let text='';
   if(composer && (composer.value||'').trim()) text=composer.value.trim();
   else if(legacy && (legacy.value||'').trim()) text=legacy.value.trim();
   if(!text) return;
+  const cat=categorizeNote(text);
+  // Local log for offline/category continuity
   const notes=ls('quick_notes',[]);
-  notes.unshift({id:Date.now(),text,cat:categorizeNote(text),date:todayKey(),done:false,gtask_synced:false});
+  notes.unshift({id:Date.now(),text,cat,date:todayKey(),done:false,gtask_synced:false});
   ss('quick_notes',notes);
   if(composer) composer.value='';
   if(legacy) legacy.value='';
   renderQuickNotes();
-  toast('Added → '+categorizeNote(text));
+  // Stream into OpenClaw — same channel as chat
+  const token=localStorage.getItem('_cockpit_admin_token')||'';
+  if(!token){ toast('⚠ Not authenticated'); return; }
+  const msg='[note] '+text;
+  try {
+    const res=await fetch('/api/chat/message',{
+      method:'POST',
+      headers:_chatApiHeaders(),
+      body:JSON.stringify({ text:msg, role:'user', context_tab:'today', tab_context:{ is_note:true, category:cat } })
+    });
+    const j=await res.json();
+    if(j.ok){
+      _chatMessages.push({ id:j.message_id, text:msg, role:'user', ts:new Date().toISOString() });
+      renderChatMessages(_chatMessages);
+      scrollChatToBottom('today');
+      toast('Note logged → '+cat);
+    } else {
+      toast('⚠ '+(j.error||'Send failed'));
+    }
+  } catch(e){ toast('⚠ Network error'); }
 }
 function toggleQuickNote(id){
   const notes=ls('quick_notes',[]);
@@ -1889,15 +1938,12 @@ const CAT_COLORS={
 function renderQuickNotes(){
   const allNotes=ls('quick_notes',[]);
   const notes=allNotes.filter(n=>!n.gtask_synced);
+  // legacy quick-notes-card stays hidden — notes now live in the OpenClaw stream
   const card=document.getElementById('quick-notes-card');
-  if(card) card.style.display = notes.length ? '' : 'none';
-  const targets=[document.getElementById('quick-notes-list'), document.getElementById('composer-notes-list')].filter(Boolean);
+  if(card) card.style.display = 'none';
+  const targets=[document.getElementById('quick-notes-list')].filter(Boolean);
   if(!targets.length) return;
-  if(!notes.length){
-    const empty='<div style="font-size:var(--text-xs);color:var(--text-3);text-align:center;padding:var(--s3);">No notes yet. Drop anything here and it\'ll get handled.</div>';
-    targets.forEach(t=>{ t.innerHTML=empty; });
-    return;
-  }
+  if(!notes.length){ targets.forEach(t=>{ t.innerHTML=''; }); return; }
   // Group by date
   const byDate={};
   notes.forEach(n=>{const k=n.date||todayKey();if(!byDate[k])byDate[k]=[];byDate[k].push(n);});
@@ -1919,25 +1965,18 @@ function renderQuickNotes(){
   targets.forEach(t=>{ t.innerHTML=out; });
 }
 
-// ── COMPOSER (today): switches between Chat and Note modes for one shared input ──
+// ── COMPOSER (today): chat and notes stream into the SAME OpenClaw channel ──
 function setComposerMode(mode, btn){
   window._composerMode = mode;
   document.querySelectorAll('.composer-tab').forEach(function(b){ b.classList.remove('active'); });
   if(btn) btn.classList.add('active');
   const composer = document.getElementById('composer-input');
-  const chatList = document.getElementById('chat-messages-today');
-  const notesList = document.getElementById('composer-notes-list');
   const sendBtn = document.getElementById('composer-send-btn');
   if(mode === 'note'){
-    if(composer) composer.placeholder = 'Note for the day…';
-    if(chatList) chatList.style.display = 'none';
-    if(notesList) notesList.style.display = 'flex';
-    if(sendBtn) sendBtn.textContent = 'Save';
-    if(typeof renderQuickNotes === 'function') renderQuickNotes();
+    if(composer) composer.placeholder = 'Drop a note — OpenClaw will log and react…';
+    if(sendBtn) sendBtn.textContent = 'Log note';
   } else {
     if(composer) composer.placeholder = 'Message OpenClaw…';
-    if(chatList) chatList.style.display = 'flex';
-    if(notesList) notesList.style.display = 'none';
     if(sendBtn) sendBtn.textContent = 'Send';
   }
   if(composer) composer.focus();
@@ -3080,7 +3119,7 @@ function renderDiscipline(){
   scoreEl.className='score-num '+(pct>=80?'green':pct>=60?'blue':pct>=40?'amber':'');
   if(pct<40)scoreEl.style.color='var(--text-3)';else scoreEl.style.color='';
   const remaining=sorted.filter(t=>!doneMap[t.id]).length;
-  document.getElementById('disc-score-label').textContent='/'+total+' · '+remaining+' open';
+  document.getElementById('disc-score-label').textContent=remaining+' open';
   const grade=pct>=90?'A+':pct>=80?'A':pct>=70?'B':pct>=60?'C':pct>=40?'D':'F';
   const gradeEl=document.getElementById('disc-grade');
   gradeEl.textContent=grade;
