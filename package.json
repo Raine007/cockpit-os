@@ -1,0 +1,41 @@
+{
+  "name": "@cockpit-os/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cockpit OS — capability framework, MCP server, and SKILL.md compiler.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./framework": "./dist/framework/index.js",
+    "./capabilities": "./dist/capabilities/index.js",
+    "./context": "./dist/context/index.js"
+  },
+  "bin": {
+    "cockpit-mcp": "./dist/mcp/server.js",
+    "cockpit-compile-skills": "./dist/build/compile-skills.js",
+    "cockpit-serve": "./dist/bin/serve.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run copy-ui",
+    "copy-ui": "node -e \"require('node:fs').cpSync('src/http/ui','dist/http/ui',{recursive:true})\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "compile-skills": "tsx src/build/compile-skills.ts",
+    "mcp": "tsx src/mcp/server.ts",
+    "serve": "tsx src/bin/serve.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "firebase-admin": "^13.8.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

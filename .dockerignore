@@ -1,0 +1,16 @@
+node_modules
+dist
+test
+**/*.test.ts
+.git
+.gitignore
+.github
+.vscode
+*.log
+*.zip
+DEPLOYMENT.md
+README.md
+cockpit-dashboard.png
+skills-out
+.env
+.env.*

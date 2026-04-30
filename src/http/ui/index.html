@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cockpit OS &middot; Dashboard</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot"></span>
+        <span>Cockpit OS</span>
+        <span class="muted">/ dashboard</span>
+      </div>
+      <div class="auth">
+        <input
+          id="token"
+          type="password"
+          placeholder="OPENCLAW_HOOKS_TOKEN"
+          autocomplete="off"
+        />
+        <input
+          id="uid"
+          type="text"
+          placeholder="filter by uid (optional)"
+          autocomplete="off"
+        />
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="grid">
+        <div class="card">
+          <h2>Pulse</h2>
+          <div id="pulse" class="kv-list">
+            <div class="muted">no data yet</div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Job status</h2>
+          <div id="jobs" class="kv-list">
+            <div class="muted">no data yet</div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>By kind</h2>
+          <div id="by-kind" class="bar-list">
+            <div class="muted">no data yet</div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>By source</h2>
+          <div id="by-source" class="bar-list">
+            <div class="muted">no data yet</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card wide">
+        <h2>Recent activity</h2>
+        <div id="recent" class="event-list">
+          <div class="muted">no data yet</div>
+        </div>
+      </section>
+
+      <footer class="muted small">
+        Counters and events come from the audit log. Job status is read from
+        the live <code>jobs</code> collection. Both endpoints are bearer-gated
+        with <code>OPENCLAW_HOOKS_TOKEN</code>.
+      </footer>
+    </main>
+
+    <script src="/dashboard.js" defer></script>
+  </body>
+</html>

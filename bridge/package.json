@@ -1,0 +1,15 @@
+{
+  "name": "openclaw-bridge",
+  "version": "1.0.0",
+  "description": "Polling bridge between Cockpit OS (Cloud Run) and OpenClaw running in WSL2",
+  "type": "module",
+  "scripts": {
+    "start": "node openclaw-bridge.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,1067 @@
+/**
+ * Phase 6 — Cockpit HTTP router.
+ *
+ * Builds the standard Cockpit OS HTTP surface:
+ *
+ *   POST /hooks/cockpit-:mappingId    \u2192 inbound webhook (auth + dispatch)
+ *   POST /hooks/computer-done         \u2192 Computer task callback
+ *   GET  /api/dashboard/summary       \u2192 audit-log counters
+ *   GET  /api/dashboard/recent        \u2192 recent activity feed
+ *   GET  /api/dashboard/jobs          \u2192 job-status histogram
+ *   GET  /api/dashboard/identities    \u2192 list identities for a uid
+ *   POST /api/identities              \u2192 admin: bind identity (token-gated)
+ *   POST /api/identities/revoke       \u2192 admin: revoke identity (token-gated)
+ *   GET  /healthz                     \u2192 liveness
+ *   GET  /                            \u2192 dashboard UI (Phase 7)
+ *
+ * The router is pure: it takes a normalized request, calls into the
+ * Cockpit handlers (which read/write Firestore), and returns a normalized
+ * response. Real adapters (node:http, Express, Cloud Functions) live in
+ * sibling files and only translate request/response shapes.
+ */
+
+import { promises as fs } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+import {
+  bindIdentity,
+  listIdentitiesForUid,
+  revokeIdentity,
+} from '../identity/resolver.js';
+import { IDENTITY_CHANNELS, type IdentityChannel } from '../identity/types.js';
+import {
+  dashboardSummary,
+  jobStatusHistogram,
+  recentForUid,
+  recentSystemActivity,
+} from '../observability/dashboard.js';
+import { handleComputerCallback } from '../computer/callback.js';
+import {
+  checkInboundAuth,
+  handleInboundEvent,
+  inboundRegistry,
+} from '../webhooks/inbound.js';
+import { createContext } from '../context/index.js';
+import { logger } from '../context/logger.js';
+import type { CockpitContext } from '../context/types.js';
+import {
+  getAllState,
+  getState,
+  setState,
+  deleteState,
+  getChatMessages,
+  appendChatMessage,
+  getPendingJobs,
+  upsertPendingJob,
+  getFeedbackRequests,
+  upsertFeedbackRequest,
+  type ChatMessage,
+  type PendingJob,
+  type FeedbackRequest,
+} from '../state/store.js';
+
+import {
+  TokenBucketLimiter,
+  checkAdminAuth,
+  clientKey,
+  internalErrorResponse,
+  rateLimitConfigFromEnv,
+  rateLimitedResponse,
+  requestIdFor,
+  withSecurityHeaders,
+} from './security.js';
+import type {
+  CockpitHttpRequest,
+  CockpitHttpResponse,
+  CockpitRoute,
+} from './types.js';
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                     */
+/* -------------------------------------------------------------------------- */
+
+function jsonResponse(status: number, body: unknown): CockpitHttpResponse {
+  return {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+    body,
+  };
+}
+
+function unauthorized(): CockpitHttpResponse {
+  return jsonResponse(401, { ok: false, error: 'unauthorized' });
+}
+
+function badRequest(error: string): CockpitHttpResponse {
+  return jsonResponse(400, { ok: false, error });
+}
+
+function notFound(): CockpitHttpResponse {
+  return jsonResponse(404, { ok: false, error: 'not found' });
+}
+
+function methodNotAllowed(): CockpitHttpResponse {
+  return jsonResponse(405, { ok: false, error: 'method not allowed' });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hook prefix matcher                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `/hooks/cockpit-:mappingId` is the only path family that accepts a path
+ * parameter. We match it with a deliberately small custom matcher instead
+ * of a regex library so behavior is obvious from the source.
+ */
+function matchInboundHook(p: string): string | null {
+  const prefix = '/hooks/cockpit-';
+  if (!p.startsWith(prefix)) return null;
+  const rest = p.slice(prefix.length);
+  if (!rest || rest.includes('/')) return null;
+  return rest;
+}
+
+/**
+ * `/api/state/:key` — matches if the path has exactly one segment after /api/state/.
+ * Returns the decoded key, or null if not a state-keyed path.
+ */
+function matchStateKey(p: string): string | null {
+  const prefix = '/api/state/';
+  if (!p.startsWith(prefix)) return null;
+  const rest = p.slice(prefix.length);
+  // Must be non-empty and must not contain more slashes (no sub-resources).
+  if (!rest || rest.includes('/')) return null;
+  return decodeURIComponent(rest);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Auth                                                                        */
+/* -------------------------------------------------------------------------- */
+
+function authHeader(req: CockpitHttpRequest): string | undefined {
+  return req.headers['authorization'];
+}
+
+/**
+ * Admin endpoints check `COCKPIT_ADMIN_TOKEN` first and fall back to
+ * `OPENCLAW_HOOKS_TOKEN` if it's unset \u2014 set both for defence in depth.
+ */
+function checkAdmin(req: CockpitHttpRequest): boolean {
+  return checkAdminAuth(authHeader(req));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rate limiting                                                               */
+/* -------------------------------------------------------------------------- */
+
+const rlConfig = rateLimitConfigFromEnv();
+const hooksLimiter = new TokenBucketLimiter(rlConfig.hooks);
+const apiLimiter = new TokenBucketLimiter(rlConfig.api);
+
+function enforceRateLimit(
+  req: CockpitHttpRequest,
+  family: 'hooks' | 'api',
+): CockpitHttpResponse | null {
+  if (!rlConfig.enabled) return null;
+  const limiter = family === 'hooks' ? hooksLimiter : apiLimiter;
+  const key = `${family}:${clientKey(req)}`;
+  const decision = limiter.check(key);
+  if (!decision.allowed) {
+    logger.warn('rate limit exceeded', {
+      family,
+      key,
+      retryAfterSeconds: decision.retryAfterSeconds,
+    });
+    return rateLimitedResponse(decision);
+  }
+  return null;
+}
+
+/** Test-only helper. */
+export function _resetRateLimitersForTesting(): void {
+  hooksLimiter._resetForTesting();
+  apiLimiter._resetForTesting();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Static UI loader                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Resolves the dashboard UI directory. The compiled output lives in
+ * `dist/http/ui` next to this file. In dev (tsx) we look for the source
+ * `src/http/ui` instead. Both paths are static \u2014 we never serve user
+ * content from this loader.
+ */
+function uiDir(): string {
+  const here = fileURLToPath(import.meta.url);
+  const distUi = path.resolve(path.dirname(here), 'ui');
+  // path.resolve handles both dist/http/router.js and src/http/router.ts
+  return distUi;
+}
+
+async function readUiAsset(name: string): Promise<string | null> {
+  const safe = name.replace(/\\/g, '/');
+  if (safe.includes('..') || safe.startsWith('/')) return null;
+  const candidates = [
+    path.join(uiDir(), safe),
+    // tsx in dev: dist/ doesn't exist yet; fall back to src/http/ui
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'http', 'ui', safe),
+  ];
+  for (const c of candidates) {
+    try {
+      return await fs.readFile(c, 'utf8');
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Handlers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+async function handleInboundHook(
+  req: CockpitHttpRequest,
+  mappingId: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkInboundAuth(authHeader(req))) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'webhook' });
+  // Splice the parsed mappingId into the body so handlers don't need to
+  // re-parse the URL.
+  const raw =
+    typeof req.body === 'object' && req.body !== null
+      ? { ...(req.body as Record<string, unknown>), mappingId }
+      : { mappingId };
+  const result = await handleInboundEvent(ctx, raw);
+  return jsonResponse(result.ok ? 200 : 400, result);
+}
+
+async function handleComputerHook(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkInboundAuth(authHeader(req))) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'webhook' });
+  const result = await handleComputerCallback(ctx, req.body);
+  return jsonResponse(result.ok ? 200 : 400, result);
+}
+
+async function handleDashboardSummary(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const q = req.query ?? {};
+  const summary = await dashboardSummary(ctx, {
+    ...(q.uid && { uid: q.uid }),
+    ...(q.since && { since: q.since }),
+    ...(q.until && { until: q.until }),
+    ...(q.scanLimit && { scanLimit: Number(q.scanLimit) }),
+  });
+  return jsonResponse(200, { ok: true, summary });
+}
+
+async function handleDashboardRecent(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const q = req.query ?? {};
+  const limit = q.limit ? Number(q.limit) : 50;
+  const events = q.uid
+    ? await recentForUid(ctx, q.uid, limit)
+    : await recentSystemActivity(ctx, limit);
+  return jsonResponse(200, { ok: true, events });
+}
+
+async function handleDashboardJobs(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const q = req.query ?? {};
+  const histogram = await jobStatusHistogram(ctx, q.uid);
+  return jsonResponse(200, { ok: true, histogram });
+}
+
+async function handleDashboardIdentities(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const q = req.query ?? {};
+  if (!q.uid) return badRequest('missing query param "uid"');
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const identities = await listIdentitiesForUid(ctx, q.uid);
+  return jsonResponse(200, { ok: true, identities });
+}
+
+async function handleBindIdentity(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const channel = body.channel as IdentityChannel | undefined;
+  const handle = body.handle as string | undefined;
+  const uid = body.uid as string | undefined;
+  const label = body.label as string | undefined;
+  if (!channel || !IDENTITY_CHANNELS.includes(channel)) {
+    return badRequest('invalid or missing "channel"');
+  }
+  if (!handle) return badRequest('missing "handle"');
+  if (!uid) return badRequest('missing "uid"');
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const input: Parameters<typeof bindIdentity>[1] = { channel, handle, uid };
+  if (label !== undefined) input.label = label;
+  const identity = await bindIdentity(ctx, input);
+  return jsonResponse(200, { ok: true, identity });
+}
+
+async function handleRevokeIdentity(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const channel = body.channel as IdentityChannel | undefined;
+  const handle = body.handle as string | undefined;
+  if (!channel || !IDENTITY_CHANNELS.includes(channel)) {
+    return badRequest('invalid or missing "channel"');
+  }
+  if (!handle) return badRequest('missing "handle"');
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const result = await revokeIdentity(ctx, channel, handle);
+  return jsonResponse(200, { ok: true, identity: result });
+}
+
+async function handleHealthz(): Promise<CockpitHttpResponse> {
+  // Liveness: process is up. No I/O, no auth.
+  return jsonResponse(200, { ok: true, at: new Date().toISOString() });
+}
+
+async function handleReadyz(): Promise<CockpitHttpResponse> {
+  // Readiness: confirm we have an auth secret configured. We do not probe
+  // Firestore here \u2014 a transient Firestore blip should not flap us out
+  // of the load balancer; queue retries handle that on the data path.
+  const haveToken =
+    !!process.env.OPENCLAW_HOOKS_TOKEN || process.env.COCKPIT_ALLOW_NO_TOKEN === '1';
+  if (!haveToken) {
+    return jsonResponse(503, {
+      ok: false,
+      ready: false,
+      error: 'OPENCLAW_HOOKS_TOKEN not set',
+    });
+  }
+  return jsonResponse(200, { ok: true, ready: true, at: new Date().toISOString() });
+}
+
+/* -------------------------------------------------------------------------- */
+/* State store handlers                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * GET /api/state \u2014 returns all key-value pairs for the authenticated user.
+ * Query param `uid` defaults to "default" for the single-user deployment;
+ * present as a forward-compat hook for multi-user future.
+ */
+async function handleGetAllState(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const uid = req.query?.uid ?? 'default';
+  const state = await getAllState(ctx, uid);
+  return jsonResponse(200, { ok: true, state });
+}
+
+/** GET /api/state/:key */
+async function handleGetState(
+  req: CockpitHttpRequest,
+  key: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const uid = req.query?.uid ?? 'default';
+  const value = await getState(ctx, uid, key);
+  return jsonResponse(200, { ok: true, key, value });
+}
+
+/** PUT /api/state/:key \u2014 body: { value: ... } */
+async function handleSetState(
+  req: CockpitHttpRequest,
+  key: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (!('value' in body)) return badRequest('missing "value" in body');
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const uid = req.query?.uid ?? 'default';
+  await setState(ctx, uid, key, body.value);
+  return jsonResponse(200, { ok: true });
+}
+
+/** DELETE /api/state/:key */
+async function handleDeleteState(
+  req: CockpitHttpRequest,
+  key: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const uid = req.query?.uid ?? 'default';
+  await deleteState(ctx, uid, key);
+  return jsonResponse(200, { ok: true });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Computer offload handler                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * POST /api/computer/offload \u2014 enqueue a computer-offload job.
+ *
+ * Body: { title: string, instructions: string, callbackKey?: string }
+ *
+ * Implementation choice: we write a job document directly to the `jobs`
+ * Firestore collection with kind="computer-offload" and status="queued".
+ * The existing /api/dashboard/jobs endpoint surfaces it. This simpler path
+ * avoids wiring up the full dispatcher router (which requires a registered
+ * intent and matching worker), keeping the diff minimal.
+ */
+async function handleComputerOffload(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const title = body.title as string | undefined;
+  const instructions = body.instructions as string | undefined;
+  if (!title || typeof title !== 'string') return badRequest('missing or invalid "title"');
+  if (!instructions || typeof instructions !== 'string')
+    return badRequest('missing or invalid "instructions"');
+  const callbackKey = body.callbackKey as string | undefined;
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const id = `offload_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const ts = new Date().toISOString();
+  const jobDoc = {
+    id,
+    uid: 'default',
+    intent: 'computer-offload',
+    kind: 'computer-offload',
+    status: 'queued',
+    worker: 'computer',
+    payload: { title, instructions, ...(callbackKey ? { callbackKey } : {}) },
+    artifacts: [],
+    context: {},
+    attempts: 0,
+    maxAttempts: 1,
+    lastError: null,
+    version: 0,
+    source: 'rpc',
+    createdAt: ts,
+    updatedAt: ts,
+    finishedAt: null,
+    externalTaskId: null,
+  };
+  await ctx.db.collection('jobs').doc(id).set(jobDoc);
+  ctx.log.info('computer offload job created', { id, title });
+  return jsonResponse(200, { ok: true, jobId: id });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Chat handlers                                                               */
+/* -------------------------------------------------------------------------- */
+
+function genId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * POST /api/chat/message
+ * body: { text: string, role: "user" }
+ * Appends to chat_messages and enqueues a pending_job.
+ */
+async function handlePostChatMessage(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const text = body.text as string | undefined;
+  const role = (body.role as string | undefined) ?? 'user';
+  if (!text || typeof text !== 'string') return badRequest('missing "text"');
+  if (role !== 'user') return badRequest('role must be "user" for incoming messages');
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const ts = new Date().toISOString();
+  const messageId = genId('msg');
+  const jobId = genId('job');
+
+  const msg: ChatMessage = { id: messageId, text, role: 'user', ts };
+  await appendChatMessage(ctx, msg);
+
+  const job: PendingJob = {
+    id: jobId,
+    kind: 'chat',
+    message_id: messageId,
+    status: 'queued',
+    created_at: ts,
+    updated_at: ts,
+  };
+  await upsertPendingJob(ctx, job);
+
+  return jsonResponse(200, { ok: true, message_id: messageId, job_id: jobId });
+}
+
+/**
+ * GET /api/chat/messages?since=<iso-ts>
+ * Returns full message log, optionally filtered to messages after `since`.
+ */
+async function handleGetChatMessages(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  let msgs = await getChatMessages(ctx);
+  const since = req.query?.since;
+  if (since) {
+    msgs = msgs.filter((m) => m.ts > since);
+  }
+  return jsonResponse(200, { ok: true, messages: msgs });
+}
+
+/**
+ * GET /api/chat/pending?status=<status>
+ * Returns pending_jobs with the given status (default: queued).
+ */
+async function handleGetChatPending(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const jobs = await getPendingJobs(ctx);
+  const statusFilter = (req.query?.status as string | undefined) ?? 'queued';
+  const filtered = jobs.filter((j) => j.status === statusFilter);
+  return jsonResponse(200, { ok: true, jobs: filtered });
+}
+
+/**
+ * POST /api/chat/reply
+ * body: { message_id, reply_text, role: "assistant"|"computer", task_created?: { todoist_id, project } }
+ * Appends reply to chat_messages, marks pending_job done.
+ */
+async function handlePostChatReply(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const message_id = body.message_id as string | undefined;
+  const reply_text = body.reply_text as string | undefined;
+  const role = (body.role as string | undefined) ?? 'assistant';
+  if (!message_id) return badRequest('missing "message_id"');
+  if (!reply_text) return badRequest('missing "reply_text"');
+  if (role !== 'assistant' && role !== 'computer')
+    return badRequest('role must be "assistant" or "computer"');
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const ts = new Date().toISOString();
+  const replyId = genId('msg');
+
+  const replyMsg: ChatMessage = {
+    id: replyId,
+    text: reply_text,
+    role: role as 'assistant' | 'computer',
+    ts,
+    message_id,
+    ...(body.task_created ? { task_created: body.task_created as { todoist_id: string; project: string } } : {}),
+  };
+  await appendChatMessage(ctx, replyMsg);
+
+  // Mark the pending_job for this message_id as done.
+  const jobs = await getPendingJobs(ctx);
+  const job = jobs.find((j) => j.message_id === message_id && j.status !== 'done');
+  if (job) {
+    await upsertPendingJob(ctx, { ...job, status: 'done', updated_at: ts });
+  }
+
+  return jsonResponse(200, { ok: true, reply_id: replyId });
+}
+
+/**
+ * POST /api/chat/escalate
+ * body: { message_id, reason, task_payload }
+ * Marks pending_job as escalated_to_computer and records a feedback_request.
+ */
+async function handlePostChatEscalate(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const message_id = body.message_id as string | undefined;
+  const reason = (body.reason as string | undefined) ?? 'escalated';
+  if (!message_id) return badRequest('missing "message_id"');
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const ts = new Date().toISOString();
+
+  const jobs = await getPendingJobs(ctx);
+  const job = jobs.find((j) => j.message_id === message_id);
+  if (!job) return badRequest('no pending_job found for message_id');
+
+  await upsertPendingJob(ctx, {
+    ...job,
+    status: 'escalated_to_computer',
+    reason,
+    task_payload: body.task_payload,
+    updated_at: ts,
+  });
+
+  // Write to feedback_requests so Raine sees it.
+  const feedbackId = genId('fb');
+  const fbReq: FeedbackRequest = {
+    id: feedbackId,
+    message_id,
+    question: `[Escalated] ${reason}`,
+    resolved: false,
+    created_at: ts,
+    updated_at: ts,
+  };
+  await upsertFeedbackRequest(ctx, fbReq);
+
+  return jsonResponse(200, { ok: true, feedback_id: feedbackId });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Feedback handlers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * POST /api/feedback/ask
+ * body: { message_id, question }
+ * OpenClaw uses this to ask Raine a clarifying question.
+ */
+async function handleFeedbackAsk(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const message_id = body.message_id as string | undefined;
+  const question = body.question as string | undefined;
+  if (!message_id) return badRequest('missing "message_id"');
+  if (!question) return badRequest('missing "question"');
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const ts = new Date().toISOString();
+  const feedbackId = genId('fb');
+
+  const fbReq: FeedbackRequest = {
+    id: feedbackId,
+    message_id,
+    question,
+    resolved: false,
+    created_at: ts,
+    updated_at: ts,
+  };
+  await upsertFeedbackRequest(ctx, fbReq);
+
+  return jsonResponse(200, { ok: true, feedback_id: feedbackId });
+}
+
+/**
+ * POST /api/feedback/answer
+ * body: { feedback_id, answer }
+ * Raine answers from the Feedback tab. Marks resolved, re-queues original message.
+ */
+async function handleFeedbackAnswer(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const feedback_id = body.feedback_id as string | undefined;
+  const answer = body.answer as string | undefined;
+  if (!feedback_id) return badRequest('missing "feedback_id"');
+  if (!answer) return badRequest('missing "answer"');
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const ts = new Date().toISOString();
+
+  // Mark feedback resolved.
+  const reqs = await getFeedbackRequests(ctx);
+  const fbReq = reqs.find((r) => r.id === feedback_id);
+  if (!fbReq) return badRequest('feedback_id not found');
+  await upsertFeedbackRequest(ctx, {
+    ...fbReq,
+    answer,
+    resolved: true,
+    updated_at: ts,
+  });
+
+  // Re-queue the original pending_job with the answer attached.
+  const jobs = await getPendingJobs(ctx);
+  const job = jobs.find((j) => j.message_id === fbReq.message_id);
+  if (job) {
+    const newJobId = genId('job');
+    const requeuedJob: PendingJob = {
+      id: newJobId,
+      kind: 'chat',
+      message_id: fbReq.message_id,
+      status: 'queued',
+      created_at: ts,
+      updated_at: ts,
+      feedback_answer: answer,
+    };
+    await upsertPendingJob(ctx, requeuedJob);
+    return jsonResponse(200, { ok: true, requeued_job_id: newJobId });
+  }
+
+  return jsonResponse(200, { ok: true, requeued_job_id: null });
+}
+
+/**
+ * GET /api/feedback/pending
+ * Returns unresolved feedback_requests.
+ */
+async function handleFeedbackPending(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const reqs = await getFeedbackRequests(ctx);
+  const pending = reqs.filter((r) => !r.resolved);
+  return jsonResponse(200, { ok: true, feedback_requests: pending });
+}
+
+async function handleRoot(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  // Serve the rich Cockpit UI. Auth is enforced by the API routes \u2014 the
+  // static shell is intentionally public (token is entered client-side).
+  const html = await readUiAsset('cockpit.html');
+  if (!html) {
+    // Fall back to admin dashboard if cockpit.html isn't present yet.
+    const fallback = await readUiAsset('index.html');
+    if (fallback) {
+      return {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+        body: fallback,
+      };
+    }
+    return jsonResponse(200, {
+      ok: true,
+      service: 'cockpit-os',
+      routes: listRoutes().map((r) => `${r.method} ${r.path}`),
+    });
+  }
+  return {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+    body: html,
+  };
+}
+
+async function handleAdmin(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  // Serve the minimal admin dashboard (the original index.html).
+  const html = await readUiAsset('index.html');
+  if (!html) return notFound();
+  return {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+    body: html,
+  };
+}
+
+async function handleStatic(
+  name: string,
+  contentType: string,
+): Promise<CockpitHttpResponse> {
+  const content = await readUiAsset(name);
+  if (!content) return notFound();
+  return {
+    status: 200,
+    headers: { 'content-type': contentType },
+    body: content,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Route table                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export interface RouteInfo {
+  method: string;
+  path: string;
+  description: string;
+}
+
+const STATIC_ROUTES: CockpitRoute[] = [
+  {
+    method: 'GET',
+    path: '/healthz',
+    description: 'Liveness probe (note: Google Frontend may intercept on Cloud Run)',
+    handler: handleHealthz,
+  },
+  {
+    method: 'GET',
+    path: '/_health',
+    description: 'Liveness probe (Cloud Run-safe alias of /healthz)',
+    handler: handleHealthz,
+  },
+  {
+    method: 'GET',
+    path: '/readyz',
+    description: 'Readiness probe',
+    handler: handleReadyz,
+  },
+  {
+    method: 'POST',
+    path: '/hooks/computer-done',
+    description: 'Computer worker callback',
+    handler: handleComputerHook,
+  },
+  {
+    method: 'GET',
+    path: '/api/dashboard/summary',
+    description: 'Audit-log counters by kind/source',
+    handler: handleDashboardSummary,
+  },
+  {
+    method: 'GET',
+    path: '/api/dashboard/recent',
+    description: 'Recent audit events',
+    handler: handleDashboardRecent,
+  },
+  {
+    method: 'GET',
+    path: '/api/dashboard/jobs',
+    description: 'Job-status histogram',
+    handler: handleDashboardJobs,
+  },
+  {
+    method: 'GET',
+    path: '/api/dashboard/identities',
+    description: 'List identities for a uid',
+    handler: handleDashboardIdentities,
+  },
+  {
+    method: 'POST',
+    path: '/api/identities',
+    description: 'Bind a channel identity (admin)',
+    handler: handleBindIdentity,
+  },
+  {
+    method: 'POST',
+    path: '/api/identities/revoke',
+    description: 'Revoke a channel identity (admin)',
+    handler: handleRevokeIdentity,
+  },
+  {
+    method: 'GET',
+    path: '/api/state',
+    description: 'Get all user state entries (admin)',
+    handler: handleGetAllState,
+  },
+  {
+    method: 'POST',
+    path: '/api/computer/offload',
+    description: 'Enqueue a Computer offload job (admin)',
+    handler: handleComputerOffload,
+  },
+  // Chat endpoints
+  {
+    method: 'POST',
+    path: '/api/chat/message',
+    description: 'Append a user message and enqueue pending_job (admin)',
+    handler: handlePostChatMessage,
+  },
+  {
+    method: 'GET',
+    path: '/api/chat/messages',
+    description: 'Get chat message log, optionally filtered by since= (admin)',
+    handler: handleGetChatMessages,
+  },
+  {
+    method: 'GET',
+    path: '/api/chat/pending',
+    description: 'Get pending_jobs by status (admin)',
+    handler: handleGetChatPending,
+  },
+  {
+    method: 'POST',
+    path: '/api/chat/reply',
+    description: 'Append assistant/computer reply and mark job done (admin)',
+    handler: handlePostChatReply,
+  },
+  {
+    method: 'POST',
+    path: '/api/chat/escalate',
+    description: 'Escalate a chat job to Computer (admin)',
+    handler: handlePostChatEscalate,
+  },
+  // Feedback endpoints
+  {
+    method: 'POST',
+    path: '/api/feedback/ask',
+    description: 'OpenClaw asks Raine a clarifying question (admin)',
+    handler: handleFeedbackAsk,
+  },
+  {
+    method: 'POST',
+    path: '/api/feedback/answer',
+    description: 'Raine answers a feedback question; re-queues job (admin)',
+    handler: handleFeedbackAnswer,
+  },
+  {
+    method: 'GET',
+    path: '/api/feedback/pending',
+    description: 'Get unresolved feedback_requests (admin)',
+    handler: handleFeedbackPending,
+  },
+  {
+    method: 'GET',
+    path: '/',
+    description: 'Cockpit UI',
+    handler: handleRoot,
+  },
+  {
+    method: 'GET',
+    path: '/_admin',
+    description: 'Minimal admin dashboard',
+    handler: handleAdmin,
+  },
+  {
+    method: 'GET',
+    path: '/dashboard.css',
+    description: 'Dashboard stylesheet',
+    handler: () => handleStatic('dashboard.css', 'text/css; charset=utf-8'),
+  },
+  {
+    method: 'GET',
+    path: '/dashboard.js',
+    description: 'Dashboard client script',
+    handler: () =>
+      handleStatic('dashboard.js', 'application/javascript; charset=utf-8'),
+  },
+];
+
+export function listRoutes(): RouteInfo[] {
+  const dynamic: RouteInfo[] = [
+    {
+      method: 'POST',
+      path: '/hooks/cockpit-:mappingId',
+      description: 'Inbound webhook from OpenClaw gateway',
+    },
+  ];
+  return [
+    ...dynamic,
+    ...STATIC_ROUTES.map((r) => ({
+      method: r.method,
+      path: r.path,
+      description: r.description ?? '',
+    })),
+  ];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Entry point                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Path family classifier \u2014 tells the rate limiter which bucket to use
+ * and the access logger which surface this request hit.
+ */
+function classifyPath(p: string): 'hooks' | 'api' | 'static' | 'health' {
+  if (p === '/healthz' || p === '/_health' || p === '/readyz') return 'health';
+  if (p.startsWith('/hooks/')) return 'hooks';
+  if (p.startsWith('/api/')) return 'api';
+  return 'static';
+}
+
+/**
+ * Single entry point used by every adapter. Resolves the route, runs the
+ * handler, and returns a normalized response. Errors never leak details to
+ * the client \u2014 they\u2019re logged with the request ID and surface as a
+ * generic 500.
+ */
+export async function routeRequest(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  const requestId = requestIdFor(req);
+  const startedMs = Date.now();
+  const family = classifyPath(req.path);
+
+  let response: CockpitHttpResponse;
+  try {
+    // Rate limit hooks/api families before any work.
+    if (family === 'hooks' || family === 'api') {
+      const limited = enforceRateLimit(req, family);
+      if (limited) {
+        response = limited;
+      } else {
+        response = await dispatch(req);
+      }
+    } else {
+      response = await dispatch(req);
+    }
+  } catch (err) {
+    logger.error('http handler crashed', {
+      requestId,
+      method: req.method,
+      path: req.path,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    response = internalErrorResponse(requestId);
+  }
+
+  // Attach request ID + security headers, then log access line.
+  const headers: Record<string, string> = {
+    ...(response.headers ?? {}),
+    'x-request-id': requestId,
+  };
+  const finalResponse = withSecurityHeaders({ ...response, headers });
+
+  // Skip access log for healthz/readyz \u2014 those are noisy load-balancer probes.
+  if (family !== 'health') {
+    logger.info('http', {
+      requestId,
+      method: req.method,
+      path: req.path,
+      status: finalResponse.status,
+      durationMs: Date.now() - startedMs,
+      family,
+    });
+  }
+  return finalResponse;
+}
+
+async function dispatch(req: CockpitHttpRequest): Promise<CockpitHttpResponse> {
+  // Hooks: parse :mappingId.
+  const mappingId = matchInboundHook(req.path);
+  if (mappingId !== null) {
+    if (req.method !== 'POST') return methodNotAllowed();
+    return await handleInboundHook(req, mappingId);
+  }
+
+  // State store: /api/state/:key dynamic routes.
+  const stateKey = matchStateKey(req.path);
+  if (stateKey !== null) {
+    if (req.method === 'GET') return await handleGetState(req, stateKey);
+    if (req.method === 'PUT') return await handleSetState(req, stateKey);
+    if (req.method === 'DELETE') return await handleDeleteState(req, stateKey);
+    return methodNotAllowed();
+  }
+
+  const match = STATIC_ROUTES.find((r) => r.path === req.path);
+  if (!match) return notFound();
+  if (match.method !== req.method) return methodNotAllowed();
+  return await match.handler(req);
+}
+
+/** Convenience for tests: explicitly drop and re-register inbound mappings. */
+export function _resetInboundRegistryForTesting(): void {
+  inboundRegistry._resetForTesting();
+}
+
+/** Re-export for adapters that want to thread context manually. */
+export type { CockpitContext };
