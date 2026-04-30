@@ -193,9 +193,19 @@ export function rateLimitedResponse(decision: RateLimitDecision): CockpitHttpRes
 /* -------------------------------------------------------------------------- */
 
 /**
- * Default security headers applied to every response. CSP is intentionally
- * tight: the dashboard only loads its own CSS/JS and makes same-origin XHRs.
- * If you embed Cockpit OS in another origin, override CSP via env.
+ * Default security headers applied to every response.
+ *
+ * CSP notes:
+ * - The dashboard ships inline <style> and <script> blocks (no separate CSS/JS
+ *   build artifacts), so 'unsafe-inline' is required for style-src and
+ *   script-src. This is acceptable here because the dashboard is admin-only
+ *   (token-gated API), the HTML is server-rendered from our own template,
+ *   and there is no untrusted user content reflected into the page.
+ * - Google Fonts is allowlisted (fonts.googleapis.com for the stylesheet,
+ *   fonts.gstatic.com for the actual woff2 files) because the dashboard uses
+ *   DM Sans / DM Mono. Remove these if you self-host the fonts.
+ * - Override the entire CSP via the COCKPIT_CSP env var if you embed Cockpit
+ *   OS elsewhere or want to lock it down further.
  */
 export function defaultSecurityHeaders(): Record<string, string> {
   return {
@@ -205,7 +215,17 @@ export function defaultSecurityHeaders(): Record<string, string> {
     'strict-transport-security': 'max-age=31536000; includeSubDomains',
     'content-security-policy':
       process.env.COCKPIT_CSP ??
-      "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      [
+        "default-src 'self'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "script-src 'self' 'unsafe-inline'",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "connect-src 'self'",
+        "img-src 'self' data:",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+      ].join('; '),
   };
 }
 

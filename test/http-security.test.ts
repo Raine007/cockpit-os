@@ -205,6 +205,20 @@ describe('defaultSecurityHeaders', () => {
     assert.ok(h['strict-transport-security']?.includes('max-age='));
   });
 
+  it('default CSP allows the dashboard to render (inline styles/scripts + Google Fonts)', () => {
+    // Regression guard: the dashboard ships inline <style>/<script> and uses
+    // DM Sans/DM Mono from Google Fonts. Without these CSP allowances the
+    // page renders unstyled. Don't tighten this without also moving the
+    // dashboard's inline assets to separate files served from same-origin.
+    delete process.env.COCKPIT_CSP;
+    const csp = defaultSecurityHeaders()['content-security-policy'] ?? '';
+    assert.ok(csp.includes("style-src 'self' 'unsafe-inline'"));
+    assert.ok(csp.includes('https://fonts.googleapis.com'));
+    assert.ok(csp.includes("script-src 'self' 'unsafe-inline'"));
+    assert.ok(csp.includes('https://fonts.gstatic.com'));
+    assert.ok(csp.includes("frame-ancestors 'none'"));
+  });
+
   it('honors COCKPIT_CSP override', () => {
     process.env.COCKPIT_CSP = "default-src 'none'";
     assert.equal(defaultSecurityHeaders()['content-security-policy'], "default-src 'none'");
