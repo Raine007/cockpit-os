@@ -391,6 +391,18 @@ img,svg{display:block;max-width:100%;}
   font-size:var(--text-sm);padding:0 var(--s5);
   border-radius:var(--r-md);height:48px;flex-shrink:0;white-space:nowrap;
 }
+.composer-tabs{
+  display:flex;gap:var(--s2);border-bottom:1px solid var(--border);
+  margin-bottom:var(--s3);padding:0 var(--s1);
+}
+.composer-tab{
+  background:transparent;border:none;border-bottom:2px solid transparent;
+  color:var(--text-3);font-size:var(--text-xs);font-weight:600;
+  padding:var(--s2) var(--s3);cursor:pointer;letter-spacing:0.02em;
+  transition:color .15s,border-color .15s;
+}
+.composer-tab:hover{color:var(--text-2);}
+.composer-tab.active{color:var(--blue);border-bottom-color:var(--blue);}
 
 /* ── FEEDBACK BANNER ── */
 .feedback-banner{
@@ -829,15 +841,11 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
   <span id="snap-fund-cur" style="display:none">$1,075</span>
   <span id="snap-fund-bar" style="display:none"></span>
 
-  <!-- QUICK NOTES -->
-  <div class="card">
+  <!-- QUICK NOTES (list only — input merged into bottom composer) -->
+  <div class="card" id="quick-notes-card" style="display:none;">
     <div class="accent-bar ab-amber"></div>
-    <div class="card-title">Quick Notes
+    <div class="card-title">Notes from the day
       <span style="font-size:var(--text-xs);color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;margin-left:auto;">auto-categorized → life plan</span>
-    </div>
-    <div class="input-row" style="margin-top:0;">
-      <input type="text" id="quick-note-input" placeholder="Don't forget... (hit Add or Enter)" onkeydown="if(event.key==='Enter')addQuickNote()"/>
-      <button class="btn-add" onclick="addQuickNote()">Add</button>
     </div>
     <div id="quick-notes-list" style="margin-top:var(--s3);display:flex;flex-direction:column;gap:var(--s2);"></div>
   </div>
@@ -945,7 +953,7 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     </div>
   </section>
 
-  <!-- ── DISCIPLINE SECTION (inlined) ── -->
+  <!-- ── DISCIPLINE SECTION (real Todoist tasks) ── -->
   <section class="today-section">
     <div class="today-section-header">🎯 Discipline <span class="pill" id="disc-grade" style="background:var(--blue-dim);color:var(--blue);vertical-align:middle;">—</span></div>
     <div class="card">
@@ -954,38 +962,35 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
         <div class="score-num" id="disc-score">0</div>
         <div class="score-sub" id="disc-score-label">/100 — Start checking off</div>
       </div>
-      <div id="disc-factors"></div>
     </div>
     <div class="card">
-      <div class="accent-bar ab-silver"></div>
-      <div class="card-title">This Week</div>
-      <div class="week-grid" id="week-grid"></div>
-    </div>
-    <div class="card">
-      <div class="accent-bar ab-crimson"></div>
-      <div class="card-title">Hard Rules</div>
-      <div style="display:flex;flex-direction:column;gap:var(--s3);">
-        <div class="task-chip"><div class="task-chip-check" style="pointer-events:none;border-color:var(--blue);"></div><div class="task-chip-text"><div style="font-weight:600;">Leave by 7:35am — school at 7:45</div><div class="task-chip-cat">10 min to get there. No snooze.</div></div></div>
-        <div class="task-chip" style="border-color:var(--crimson);"><div class="task-chip-check" style="pointer-events:none;border-color:var(--crimson);"></div><div class="task-chip-text"><div style="font-weight:600;color:var(--crimson);">Midnight hard stop</div><div class="task-chip-cat">Phone down. Sleep = performance.</div></div></div>
-        <div class="task-chip"><div class="task-chip-check" style="pointer-events:none;border-color:var(--blue);"></div><div class="task-chip-text"><div style="font-weight:600;">1 task minimum per day</div><div class="task-chip-cat">Non-negotiable.</div></div></div>
-        <div class="task-chip" style="border-color:var(--crimson);"><div class="task-chip-check" style="pointer-events:none;border-color:var(--crimson);"></div><div class="task-chip-text"><div style="font-weight:600;color:var(--crimson);">Kill Gemini CC before new spending</div><div class="task-chip-cat">33% APR is hemorrhaging money.</div></div></div>
+      <div class="accent-bar ab-amber"></div>
+      <div class="card-title" style="justify-content:space-between;">
+        <span>Today's Real Tasks</span>
+        <span style="font-size:var(--text-xs);color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;">live from Todoist</span>
       </div>
+      <div id="disc-factors"></div>
     </div>
   </section>
 
   <!-- ── FEEDBACK BANNER (today) ── -->
   <div class="feedback-banner" id="feedback-banner-today" style="display:none;"></div>
 
-  <!-- ── CHAT SECTION (today) ── -->
+  <!-- ── UNIFIED COMPOSER (today): notes + OpenClaw chat in one input ── -->
   <div class="chat-section" id="chat-today">
-    <div class="chat-section-header">💬 Chat with OpenClaw
-      <div id="chat-typing-indicator" style="display:none;font-size:var(--text-xs);color:var(--text-3);display:inline-block;margin-left:8px;">🦞 thinking…</div>
+    <div class="composer-tabs">
+      <button class="composer-tab active" data-mode="chat" onclick="setComposerMode('chat',this)">💬 Chat with OpenClaw <span id="chat-typing-indicator" style="display:none;font-size:var(--text-xs);color:var(--text-3);margin-left:6px;">🦞 thinking…</span></button>
+      <button class="composer-tab" data-mode="note" onclick="setComposerMode('note',this)">📝 Note for the day</button>
     </div>
     <div class="chat-messages-list" id="chat-messages-today" aria-live="polite"></div>
+    <div id="composer-notes-list" style="display:none;flex-direction:column;gap:var(--s2);max-height:40vh;overflow-y:auto;padding:var(--s2);"></div>
     <div class="chat-input-row">
-      <textarea id="chat-input-today" rows="2" placeholder="Message OpenClaw…" class="chat-textarea" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage('today');}"></textarea>
-      <button onclick="sendChatMessage('today')" class="chat-send-btn">Send</button>
+      <textarea id="composer-input" rows="2" placeholder="Message OpenClaw…" class="chat-textarea" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitComposer();}"></textarea>
+      <button onclick="submitComposer()" class="chat-send-btn" id="composer-send-btn">Send</button>
     </div>
+    <!-- legacy ids kept for compatibility -->
+    <textarea id="chat-input-today" style="display:none;"></textarea>
+    <input type="text" id="quick-note-input" style="display:none;"/>
   </div>
 </div>
 
@@ -1292,12 +1297,19 @@ function scrollChatToBottom(tab){
 
 async function sendChatMessage(tab){
   // tab: 'today' | 'money' | 'flight'
-  const inputId = 'chat-input-' + (tab||'today');
-  const input = document.getElementById(inputId);
+  // Today uses unified composer (#composer-input); money/flight still use #chat-input-<tab>
+  let input;
+  if((tab||'today') === 'today'){
+    input = document.getElementById('composer-input') || document.getElementById('chat-input-today');
+  } else {
+    input = document.getElementById('chat-input-' + tab);
+  }
   if(!input) return;
   const text = (input.value||'').trim();
   if(!text) return;
   input.value = '';
+  const legacy = document.getElementById('chat-input-today');
+  if(legacy && legacy !== input) legacy.value = '';
   const token = localStorage.getItem('_cockpit_admin_token')||'';
   if(!token){ toast('⚠ Not authenticated'); return; }
   // Build tab_context snapshot from localStorage
@@ -1882,11 +1894,18 @@ function categorizeNote(text){
   return'General';
 }
 function addQuickNote(){
-  const inp=document.getElementById('quick-note-input');
-  const text=(inp.value||'').trim();if(!text)return;
+  const composer=document.getElementById('composer-input');
+  const legacy=document.getElementById('quick-note-input');
+  let text='';
+  if(composer && (composer.value||'').trim()) text=composer.value.trim();
+  else if(legacy && (legacy.value||'').trim()) text=legacy.value.trim();
+  if(!text) return;
   const notes=ls('quick_notes',[]);
   notes.unshift({id:Date.now(),text,cat:categorizeNote(text),date:todayKey(),done:false,gtask_synced:false});
-  ss('quick_notes',notes);inp.value='';renderQuickNotes();
+  ss('quick_notes',notes);
+  if(composer) composer.value='';
+  if(legacy) legacy.value='';
+  renderQuickNotes();
   toast('Added → '+categorizeNote(text));
 }
 function toggleQuickNote(id){
@@ -1903,11 +1922,17 @@ const CAT_COLORS={
   School:'var(--amber)',Truck:'var(--amber)',Drywall:'var(--grey)',Personal:'var(--silver)',General:'var(--text-3)'
 };
 function renderQuickNotes(){
-  const el=document.getElementById('quick-notes-list');if(!el)return;
   const allNotes=ls('quick_notes',[]);
-  // Only show unsynced notes — synced ones have been routed to Google Tasks and are done here
   const notes=allNotes.filter(n=>!n.gtask_synced);
-  if(!notes.length){el.innerHTML='<div style="font-size:var(--text-xs);color:var(--text-3);text-align:center;padding:var(--s3);">All clear. Drop anything here and it\'ll get handled.</div>';return;}
+  const card=document.getElementById('quick-notes-card');
+  if(card) card.style.display = notes.length ? '' : 'none';
+  const targets=[document.getElementById('quick-notes-list'), document.getElementById('composer-notes-list')].filter(Boolean);
+  if(!targets.length) return;
+  if(!notes.length){
+    const empty='<div style="font-size:var(--text-xs);color:var(--text-3);text-align:center;padding:var(--s3);">No notes yet. Drop anything here and it\'ll get handled.</div>';
+    targets.forEach(t=>{ t.innerHTML=empty; });
+    return;
+  }
   // Group by date
   const byDate={};
   notes.forEach(n=>{const k=n.date||todayKey();if(!byDate[k])byDate[k]=[];byDate[k].push(n);});
@@ -1926,7 +1951,39 @@ function renderQuickNotes(){
       </div>`;
     });
   });
-  el.innerHTML=out;
+  targets.forEach(t=>{ t.innerHTML=out; });
+}
+
+// ── COMPOSER (today): switches between Chat and Note modes for one shared input ──
+function setComposerMode(mode, btn){
+  window._composerMode = mode;
+  document.querySelectorAll('.composer-tab').forEach(function(b){ b.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  const composer = document.getElementById('composer-input');
+  const chatList = document.getElementById('chat-messages-today');
+  const notesList = document.getElementById('composer-notes-list');
+  const sendBtn = document.getElementById('composer-send-btn');
+  if(mode === 'note'){
+    if(composer) composer.placeholder = 'Note for the day…';
+    if(chatList) chatList.style.display = 'none';
+    if(notesList) notesList.style.display = 'flex';
+    if(sendBtn) sendBtn.textContent = 'Save';
+    if(typeof renderQuickNotes === 'function') renderQuickNotes();
+  } else {
+    if(composer) composer.placeholder = 'Message OpenClaw…';
+    if(chatList) chatList.style.display = 'flex';
+    if(notesList) notesList.style.display = 'none';
+    if(sendBtn) sendBtn.textContent = 'Send';
+  }
+  if(composer) composer.focus();
+}
+function submitComposer(){
+  const mode = window._composerMode || 'chat';
+  if(mode === 'note'){
+    addQuickNote();
+  } else {
+    sendChatMessage('today');
+  }
 }
 
 // ── TODAY ──
@@ -2850,35 +2907,109 @@ function buildFactors(){
   ].slice(0,8);
 }
 
+// Real Todoist tasks (snapshot — refreshed by Computer)
+const TODOIST_TASKS = [
+  {id:'6gVcpH37w4J8jp2f',content:"Apply for Destination 225° Cadet Pathway",priority:4,due:'2026-05-01',project:'Personal',labels:['flight'],why:'Southwest cadet pathway. Application due May 1. Open it, read the requirements, and submit — or at minimum create an account.'},
+  {id:'6gVhWqc7G836Pcp7',content:"Interview at Mountainside Fitness — Mon 2:00 PM",priority:4,due:'2026-05-04',project:'Personal',labels:[],why:'Frank Lloyd Wright & Shea, Scottsdale. Interview with Zac (480-234-0592). Dress sharp, arrive 5–10 min early.'},
+  {id:'6gVV2WRJhqc3xQwP',content:"URGENT: Send Reel Insights to Computer",priority:4,due:'2026-04-28',project:'Inbox',labels:[],why:'Send IG Insights for marshmallow Reel: views/reach/likes/comments/shares/saves + retention.'},
+  {id:'6gVVgQmr4Pr6hM4w',content:"Review website for Stay Classy LLC on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Business'],why:'Stripe requires website review or payouts will be disrupted. dashboard.stripe.com/settings/business'},
+  {id:'6gVVgRPvgmmpxPqP',content:"Re-enable 2-step auth on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Security'],why:'2FA was turned off Apr 26. If not you, account may be compromised. Re-enable at dashboard.stripe.com/settings/user'},
+  {id:'6gVjfjxWFG3FV3jP',content:"Schedule Queen Creek PBR Reel REPOST — 6:30 PM MST",priority:4,due:'2026-04-29',project:'Inbox',labels:['instagram','reel-queue'],why:'Serious recut, native audio only. Verify rider status before publish.'},
+  {id:'6gVqVcx4Jj87hRG7',content:"Submit English Project",priority:3,due:'2026-05-03',project:'Personal',labels:[],why:'Due May 3. You work May 1 4–9:30pm and May 3 3–9:30pm — finish by May 2 (day off).'},
+  {id:'6gVVgW63vvhVpvGP',content:"Check FAFSA 2026–27 results",priority:3,due:'2026-05-01',project:'Inbox',labels:['School'],why:'FAFSA received Apr 25, processing 1–3 days. Check My Activity on studentaid.gov.'},
+  {id:'6gVVqjg89HWrXc9P',content:"Post Queen Creek PBR Reel (bull riding)",priority:3,due:'2026-04-29',project:'Inbox',labels:['instagram','rodeo'],why:'Caption + hashtags + audio options ready. Top window: Tue 6:30–8:30 PM MST.'},
+  {id:'6gVVgWpfmcHjpggP',content:"Verify Maricopa CC password reset",priority:3,due:'2026-04-28',project:'Inbox',labels:['School','Security'],why:'Password reset Apr 27 (GRA2172595@maricopa.edu). If not you, contact Maricopa IT.'},
+  {id:'6gVQCCq7mHFHj8qf',content:"Get better suit shirts when bills are covered",priority:3,due:'2026-05-03',project:'Personal',labels:['money'],why:'Check budget for better suit shirts.'},
+  {id:'6gVQCCrmqMJRmM37',content:"Research Southwest Destination 225° requirements",priority:3,due:null,project:'Personal',labels:['flight'],why:'Long game: PPL → instrument → commercial → hours. Knowing the target shapes how you train now.'},
+  {id:'6gVVhWX8mwFVwpfw',content:"Bulk-delete email trash piles in Gmail (~60)",priority:2,due:'2026-04-29',project:'Inbox',labels:[],why:'~60 emails cleared in under 2 minutes. Search links in Todoist task.'},
+  {id:'6gVVgXWVP2wGwm4w',content:"Confirm 4 recent Dropbox sign-ins",priority:2,due:'2026-04-28',project:'Inbox',labels:['Security'],why:'4 sign-ins Apr 24–27. Confirm or visit dropbox.com/security_checkup.'},
+  {id:'6gVQCCrpcHWp7w4f',content:"🚗 Get radiator flushed and air filter replaced",priority:2,due:'2026-06-26',project:'Personal',labels:['errand'],why:'Vehicle maintenance — complete by June 26.'},
+  {id:'6gVQCChqQRC387h7',content:"Get scooter tire quote from EaRide Shop",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],why:'Solid rubber rear 10-inch. Call (480) 930-4416 or earideshop.com quote form.'},
+  {id:'6gVQCCx2p86xM4Hf',content:"Hang belts on wall",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],why:"Do during the day while mom isn't sleeping."},
+  {id:'6gVhgVxrVcXwGFf7',content:"Reach out to Mr Delima TOMORROW",priority:1,due:null,project:'Personal',labels:[],why:'Captured from Quick Notes. Turn into one concrete physical action.'}
+];
+
+function _todoistDayBucket(t){
+  // returns a sortable string: 0=overdue, 1=today, 2=this-week, 3=later, 4=no-date
+  if(!t.due) return '4';
+  const today=todayKey();
+  if(t.due < today) return '0';
+  if(t.due === today) return '1';
+  // within 7 days
+  const a=new Date(today); const b=new Date(t.due);
+  const diff=(b-a)/(1000*60*60*24);
+  if(diff<=7) return '2';
+  return '3';
+}
+function _todoistDoneMap(){ return ls('todoist_done',{}); }
+function toggleTodoistTask(id){
+  const m=_todoistDoneMap(); m[id]=!m[id]; ss('todoist_done',m); renderDiscipline();
+}
+
 function renderDiscipline(){
-  const factors=buildFactors();
-  const score=factors.reduce((s,f)=>s+(f.done?f.pts:0),0);
-  const maxPts=factors.reduce((s,f)=>s+f.pts,0);
-  const pct=Math.round(score/maxPts*100);
+  const doneMap=_todoistDoneMap();
+  // Sort: priority desc, then by date bucket, then by due asc
+  const sorted=[...TODOIST_TASKS].sort((a,b)=>{
+    if(b.priority!==a.priority) return b.priority-a.priority;
+    const ba=_todoistDayBucket(a), bb=_todoistDayBucket(b);
+    if(ba!==bb) return ba.localeCompare(bb);
+    return (a.due||'9999').localeCompare(b.due||'9999');
+  });
+
+  // Score: each P4 = 25pts, P3 = 15, P2 = 10, P1 = 5
+  const ptsFor=(p)=>p===4?25:p===3?15:p===2?10:5;
+  const total=sorted.reduce((s,t)=>s+ptsFor(t.priority),0);
+  const score=sorted.reduce((s,t)=>s+(doneMap[t.id]?ptsFor(t.priority):0),0);
+  const pct=total?Math.round(score/total*100):0;
 
   const scoreEl=document.getElementById('disc-score');
   scoreEl.textContent=score;
   scoreEl.className='score-num '+(pct>=80?'green':pct>=60?'blue':pct>=40?'amber':'');
   if(pct<40)scoreEl.style.color='var(--text-3)';else scoreEl.style.color='';
-  document.getElementById('disc-score-label').textContent='/'+maxPts+' — '+(pct>=80?'Locked in 🔥':pct>=60?'Good push.':pct>=40?'Keep going.':'Get moving.');
+  const remaining=sorted.filter(t=>!doneMap[t.id]).length;
+  document.getElementById('disc-score-label').textContent='/'+total+' · '+remaining+' open';
   const grade=pct>=90?'A+':pct>=80?'A':pct>=70?'B':pct>=60?'C':pct>=40?'D':'F';
   const gradeEl=document.getElementById('disc-grade');
   gradeEl.textContent=grade;
   gradeEl.style.background=pct>=80?'var(--green-dim)':pct>=60?'var(--blue-dim)':'var(--crimson-dim)';
   gradeEl.style.color=pct>=80?'var(--green)':pct>=60?'var(--blue)':'var(--crimson)';
 
-  document.getElementById('disc-factors').innerHTML=factors.map(f=>`
-    <div class="task-chip" style="${f.done?'opacity:0.6':''}">
-      <div class="task-chip-check ${f.done?'done':''}" onclick="toggleDisciplineFactor('${f.id}',this)">
-        ${f.done?'✓':''}
-      </div>
-      <div class="task-chip-text">
-        <div style="font-weight:600;">${f.label}</div>
-        <div class="task-chip-cat">${f.cat||'Daily'} · +${f.pts}pts${f.done?' · done':''}</div>
-      </div>
-    </div>`).join('');
-
-  renderWeekGrid();
+  // Group output by bucket
+  const labels={'0':'Overdue','1':'Today','2':'This Week','3':'Later','4':'No date'};
+  const colors={'0':'var(--crimson)','1':'var(--blue)','2':'var(--amber)','3':'var(--text-3)','4':'var(--text-3)'};
+  const groups={};
+  sorted.forEach(t=>{const b=_todoistDayBucket(t);(groups[b]=groups[b]||[]).push(t);});
+  let out='';
+  ['0','1','2','3','4'].forEach(b=>{
+    if(!groups[b]||!groups[b].length)return;
+    const visible=groups[b].filter(t=>!doneMap[t.id]);
+    if(!visible.length)return;
+    out+=`<div style="font-size:0.6rem;font-weight:700;color:${colors[b]};text-transform:uppercase;letter-spacing:0.08em;margin:var(--s3) 0 var(--s2);">${labels[b]} · ${visible.length}</div>`;
+    visible.forEach(t=>{
+      const isDone=!!doneMap[t.id];
+      const dueStr=t.due?new Date(t.due+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      const pBadge=t.priority===4?'<span class="pill pill-crimson" style="font-size:0.55rem;">P1</span>':t.priority===3?'<span class="pill" style="font-size:0.55rem;background:var(--amber-dim,#3a2a10);color:var(--amber);">P2</span>':'';
+      const labelChips=(t.labels||[]).slice(0,2).map(l=>`<span style="font-size:0.55rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">#${l}</span>`).join(' ');
+      out+=`<div class="task-chip" style="align-items:flex-start;${isDone?'opacity:0.5':''}">
+        <div class="task-chip-check ${isDone?'done':''}" onclick="toggleTodoistTask('${t.id}')" style="flex-shrink:0;margin-top:2px;">${isDone?'✓':''}</div>
+        <div class="task-chip-text" style="flex:1;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            ${pBadge}
+            <span style="font-weight:600;${isDone?'text-decoration:line-through':''}">${t.content}</span>
+          </div>
+          <div class="task-chip-cat" style="margin-top:3px;line-height:1.5;">${t.why}</div>
+          <div style="display:flex;gap:8px;margin-top:4px;align-items:center;">
+            <span style="font-size:0.6rem;color:var(--text-3);">${t.project}${dueStr?' · '+dueStr:''}</span>
+            ${labelChips}
+          </div>
+        </div>
+      </div>`;
+    });
+  });
+  if(!out){
+    out='<div style="text-align:center;padding:var(--s4);color:var(--green);font-weight:700;">All Todoist tasks cleared. 🔥</div>';
+  }
+  document.getElementById('disc-factors').innerHTML=out;
 }
 
 function toggleDisciplineFactor(id,el){
