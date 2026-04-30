@@ -155,14 +155,24 @@ function extractText(json) {
 }
 
 async function tryEndpoint(url, payload, label) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
+  // OpenClaw on local Ollama can take 30+ seconds to first-token on cold start.
+  const controller = new AbortController();
+  const timeoutMs = parseInt(process.env.OPENCLAW_TIMEOUT_MS || '120000', 10);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENCLAW_GATEWAY_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(t);
+  }
   const bodyText = await res.text();
   if (!res.ok) {
     const err = new Error(`OpenClaw POST ${label} → HTTP ${res.status}: ${bodyText.slice(0, 300)}`);
@@ -191,23 +201,12 @@ async function sendToOpenClaw(job) {
 
   log('debug', `→ OpenClaw: ${content.slice(0, 80)}...`);
 
-  // 1. Try native session API
-  try {
-    return await tryEndpoint(
-      `${OPENCLAW_GATEWAY_URL}/api/sessions/main/messages`,
-      { message: content, source: 'cockpit-bridge', message_id: job.message_id, job_id: job.id },
-      '/api/sessions/main/messages'
-    );
-  } catch (e) {
-    if (e.status !== 404 && e.status !== 405) throw e;
-    log('info', `session route unavailable (HTTP ${e.status}), falling back to /v1/chat/completions`);
-  }
-
-  // 2. Fall back to OpenAI-compatible chat completions
+  // OpenClaw 2026.4.27+ exposes OpenAI-compatible /v1/chat/completions.
+  // Model id format uses a slash, e.g. "openclaw/main" (NOT "openclaw:main").
   return await tryEndpoint(
     `${OPENCLAW_GATEWAY_URL}/v1/chat/completions`,
     {
-      model: process.env.OPENCLAW_MODEL || 'openclaw:main',
+      model: process.env.OPENCLAW_MODEL || 'openclaw/main',
       messages: [
         { role: 'system', content: 'You are OpenClaw, helping Raine via the Cockpit OS chat. Keep replies concise. If the user asks for a video edit (Reels/captions/9:16/blur N-numbers), respond with [ESCALATE] followed by what they asked for. If you need clarification before proceeding, respond with [ASK] followed by your single clarifying question.' },
         { role: 'user', content },
