@@ -45,7 +45,9 @@ ExecStartPre=/bin/bash -lc '\
   exit 0'
 
 # --- Main process --------------------------------------------------------
-ExecStart=/bin/bash -lc 'exec node %h/cockpit-os/bridge/openclaw-bridge.js'
+# Use the absolute nvm node path so systemd doesn't depend on shell rc files
+# loading nvm. Update if node version changes (run: which node).
+ExecStart=%h/.nvm/versions/node/v22.22.2/bin/node %h/cockpit-os/bridge/openclaw-bridge.js
 
 # --- Resilience ----------------------------------------------------------
 # Always restart, even on success exit (defensive).
