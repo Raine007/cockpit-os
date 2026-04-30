@@ -797,49 +797,53 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     <div id="offload-status" style="font-size:var(--text-xs);color:var(--amber);text-align:right;padding-right:4px;min-height:1em;"></div>
   </div>
 
-  <!-- MISSION -->
-  <div class="card">
-    <div class="accent-bar ab-blue"></div>
-    <div class="card-title" style="justify-content:space-between;">
-      <span>Daily Mission</span>
-      <span class="pill pill-silver" id="mission-work-tag" style="display:none;"></span>
+  <!-- ── DISCIPLINE / TODAY'S REAL TASKS (top of Today) ── -->
+  <section class="today-section" style="margin-top:0;">
+    <div class="today-section-header">🎯 Today's Real Tasks <span class="pill" id="disc-grade" style="background:var(--blue-dim);color:var(--blue);vertical-align:middle;">—</span></div>
+    <div class="card">
+      <div class="accent-bar ab-blue"></div>
+      <div class="score-hero">
+        <div class="score-num" id="disc-score">0</div>
+        <div class="score-sub" id="disc-score-label">/100 — Start checking off</div>
+      </div>
     </div>
-    <div class="mission-headline" id="mission-text">Loading...</div>
-    <div id="mission-notes" style="font-size:var(--text-xs);color:var(--text-2);margin-bottom:var(--s4);line-height:1.5;display:none;padding:var(--s3) var(--s4);background:var(--surface-3);border-radius:var(--r-sm);border-left:2px solid var(--blue);"></div>
-    <button class="mission-check-btn" id="mission-btn" onclick="toggleMission()">
-      <svg id="mission-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>
-      <span id="mission-label">Mark complete</span>
-    </button>
-    <div class="streak-row">
-      <div class="streak-num" id="streak-count">0</div>
-      <div class="streak-label"><strong>Day Streak</strong>No excuses. Keep it alive.</div>
+    <div class="card">
+      <div class="accent-bar ab-amber"></div>
+      <div class="card-title" style="justify-content:space-between;">
+        <span>Live tasks</span>
+        <span style="font-size:var(--text-xs);color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;">tap a row for steps</span>
+      </div>
+      <div id="disc-factors"></div>
     </div>
+  </section>
+
+  <!-- ── Hidden compatibility stubs (don't remove — referenced by existing JS) ── -->
+  <div style="display:none;" aria-hidden="true">
+    <span id="mission-work-tag"></span>
+    <span id="mission-text"></span>
+    <span id="mission-notes"></span>
+    <span id="mission-icon"></span>
+    <span id="mission-label"></span>
+    <button id="mission-btn"></button>
+    <span id="streak-count">0</span>
+    <div id="urgent-card"><div id="urgent-list"></div></div>
+    <div id="next-task-card">
+      <span id="next-task-list-pill"></span>
+      <div id="next-task-title"></div>
+      <div id="next-task-how"></div>
+      <button id="next-task-done-btn"></button>
+      <button id="next-task-later-btn"></button>
+      <div id="next-task-empty"></div>
+    </div>
+    <span id="sched-time-pill"></span>
+    <span id="day-progress"></span>
+    <div id="guardrail"></div>
+    <div id="sched-blocks"></div>
+    <span id="snap-invest"></span>
+    <span id="snap-gumroad">0</span>
+    <span id="snap-fund-cur">$1,075</span>
+    <span id="snap-fund-bar"></span>
   </div>
-
-  <!-- urgent-list kept for JS compat, rendered in discipline only -->
-  <div id="urgent-card" style="display:none;"><div id="urgent-list"></div></div>
-
-  <!-- NEXT TASK -->
-  <div class="card" id="next-task-card">
-    <div class="accent-bar ab-blue"></div>
-    <div class="card-title" style="justify-content:space-between;">
-      <span>Next Task</span>
-      <span class="pill pill-blue" id="next-task-list-pill" style="font-size:0.6rem;"></span>
-    </div>
-    <div id="next-task-title" style="font-size:var(--text-lg);font-weight:700;color:var(--white);line-height:1.3;margin-bottom:var(--s3);letter-spacing:-0.02em;"></div>
-    <div id="next-task-how" style="font-size:var(--text-xs);color:var(--text-2);line-height:1.6;background:var(--surface-3);border-radius:var(--r-sm);padding:var(--s3) var(--s4);border-left:2px solid var(--blue);margin-bottom:var(--s4);display:none;"></div>
-    <div style="display:flex;gap:var(--s2);">
-      <button id="next-task-done-btn" onclick="markNextTaskDone()">Done ✓</button>
-      <button id="next-task-later-btn" onclick="snoozeNextTask()">Do Later →</button>
-    </div>
-    <div id="next-task-empty" style="display:none;text-align:center;padding:var(--s4);font-size:var(--text-sm);color:var(--green);font-weight:700;">All tasks cleared for today. 🔥</div>
-  </div>
-
-  <!-- snap-invest kept for money tab rendering -->
-  <span id="snap-invest" style="display:none"></span>
-  <span id="snap-gumroad" style="display:none">0</span>
-  <span id="snap-fund-cur" style="display:none">$1,075</span>
-  <span id="snap-fund-bar" style="display:none"></span>
 
   <!-- QUICK NOTES (list only — input merged into bottom composer) -->
   <div class="card" id="quick-notes-card" style="display:none;">
@@ -849,25 +853,6 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     </div>
     <div id="quick-notes-list" style="margin-top:var(--s3);display:flex;flex-direction:column;gap:var(--s2);"></div>
   </div>
-
-  <!-- ── SCHEDULE SECTION (inlined) ── -->
-  <section class="today-section">
-    <div class="today-section-header">📅 Schedule</div>
-    <div class="card">
-      <div class="accent-bar ab-silver"></div>
-      <div class="card-title">Day Progress <span style="font-family:'DM Mono',monospace;font-size:.7rem;color:var(--text-3);font-weight:400;" id="sched-time-pill">—</span></div>
-      <div class="day-bar"><div class="day-bar-fill" id="day-progress" style="width:0%"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:var(--text-xs);color:var(--text-3);font-family:'DM Mono',monospace;">
-        <span>7:45am</span><span>12pm</span><span>Midnight</span>
-      </div>
-    </div>
-    <div class="guardrail hidden" id="guardrail"></div>
-    <div class="card">
-      <div class="accent-bar ab-blue"></div>
-      <div class="card-title">Today's Blocks</div>
-      <div id="sched-blocks"></div>
-    </div>
-  </section>
 
   <!-- ── CONTENT SECTION (inlined) ── -->
   <section class="today-section">
@@ -950,26 +935,6 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
           </div>
         </div>
       </div>
-    </div>
-  </section>
-
-  <!-- ── DISCIPLINE SECTION (real Todoist tasks) ── -->
-  <section class="today-section">
-    <div class="today-section-header">🎯 Discipline <span class="pill" id="disc-grade" style="background:var(--blue-dim);color:var(--blue);vertical-align:middle;">—</span></div>
-    <div class="card">
-      <div class="accent-bar ab-blue"></div>
-      <div class="score-hero">
-        <div class="score-num" id="disc-score">0</div>
-        <div class="score-sub" id="disc-score-label">/100 — Start checking off</div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="accent-bar ab-amber"></div>
-      <div class="card-title" style="justify-content:space-between;">
-        <span>Today's Real Tasks</span>
-        <span style="font-size:var(--text-xs);color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;">live from Todoist</span>
-      </div>
-      <div id="disc-factors"></div>
     </div>
   </section>
 
@@ -2909,24 +2874,119 @@ function buildFactors(){
 
 // Real Todoist tasks (snapshot — refreshed by Computer)
 const TODOIST_TASKS = [
-  {id:'6gVcpH37w4J8jp2f',content:"Apply for Destination 225° Cadet Pathway",priority:4,due:'2026-05-01',project:'Personal',labels:['flight'],why:'Southwest cadet pathway. Application due May 1. Open it, read the requirements, and submit — or at minimum create an account.'},
-  {id:'6gVhWqc7G836Pcp7',content:"Interview at Mountainside Fitness — Mon 2:00 PM",priority:4,due:'2026-05-04',project:'Personal',labels:[],why:'Frank Lloyd Wright & Shea, Scottsdale. Interview with Zac (480-234-0592). Dress sharp, arrive 5–10 min early.'},
-  {id:'6gVV2WRJhqc3xQwP',content:"URGENT: Send Reel Insights to Computer",priority:4,due:'2026-04-28',project:'Inbox',labels:[],why:'Send IG Insights for marshmallow Reel: views/reach/likes/comments/shares/saves + retention.'},
-  {id:'6gVVgQmr4Pr6hM4w',content:"Review website for Stay Classy LLC on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Business'],why:'Stripe requires website review or payouts will be disrupted. dashboard.stripe.com/settings/business'},
-  {id:'6gVVgRPvgmmpxPqP',content:"Re-enable 2-step auth on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Security'],why:'2FA was turned off Apr 26. If not you, account may be compromised. Re-enable at dashboard.stripe.com/settings/user'},
-  {id:'6gVjfjxWFG3FV3jP',content:"Schedule Queen Creek PBR Reel REPOST — 6:30 PM MST",priority:4,due:'2026-04-29',project:'Inbox',labels:['instagram','reel-queue'],why:'Serious recut, native audio only. Verify rider status before publish.'},
-  {id:'6gVqVcx4Jj87hRG7',content:"Submit English Project",priority:3,due:'2026-05-03',project:'Personal',labels:[],why:'Due May 3. You work May 1 4–9:30pm and May 3 3–9:30pm — finish by May 2 (day off).'},
-  {id:'6gVVgW63vvhVpvGP',content:"Check FAFSA 2026–27 results",priority:3,due:'2026-05-01',project:'Inbox',labels:['School'],why:'FAFSA received Apr 25, processing 1–3 days. Check My Activity on studentaid.gov.'},
-  {id:'6gVVqjg89HWrXc9P',content:"Post Queen Creek PBR Reel (bull riding)",priority:3,due:'2026-04-29',project:'Inbox',labels:['instagram','rodeo'],why:'Caption + hashtags + audio options ready. Top window: Tue 6:30–8:30 PM MST.'},
-  {id:'6gVVgWpfmcHjpggP',content:"Verify Maricopa CC password reset",priority:3,due:'2026-04-28',project:'Inbox',labels:['School','Security'],why:'Password reset Apr 27 (GRA2172595@maricopa.edu). If not you, contact Maricopa IT.'},
-  {id:'6gVQCCq7mHFHj8qf',content:"Get better suit shirts when bills are covered",priority:3,due:'2026-05-03',project:'Personal',labels:['money'],why:'Check budget for better suit shirts.'},
-  {id:'6gVQCCrmqMJRmM37',content:"Research Southwest Destination 225° requirements",priority:3,due:null,project:'Personal',labels:['flight'],why:'Long game: PPL → instrument → commercial → hours. Knowing the target shapes how you train now.'},
-  {id:'6gVVhWX8mwFVwpfw',content:"Bulk-delete email trash piles in Gmail (~60)",priority:2,due:'2026-04-29',project:'Inbox',labels:[],why:'~60 emails cleared in under 2 minutes. Search links in Todoist task.'},
-  {id:'6gVVgXWVP2wGwm4w',content:"Confirm 4 recent Dropbox sign-ins",priority:2,due:'2026-04-28',project:'Inbox',labels:['Security'],why:'4 sign-ins Apr 24–27. Confirm or visit dropbox.com/security_checkup.'},
-  {id:'6gVQCCrpcHWp7w4f',content:"🚗 Get radiator flushed and air filter replaced",priority:2,due:'2026-06-26',project:'Personal',labels:['errand'],why:'Vehicle maintenance — complete by June 26.'},
-  {id:'6gVQCChqQRC387h7',content:"Get scooter tire quote from EaRide Shop",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],why:'Solid rubber rear 10-inch. Call (480) 930-4416 or earideshop.com quote form.'},
-  {id:'6gVQCCx2p86xM4Hf',content:"Hang belts on wall",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],why:"Do during the day while mom isn't sleeping."},
-  {id:'6gVhgVxrVcXwGFf7',content:"Reach out to Mr Delima TOMORROW",priority:1,due:null,project:'Personal',labels:[],why:'Captured from Quick Notes. Turn into one concrete physical action.'}
+  {id:'6gVcpH37w4J8jp2f',content:"Apply for Destination 225° Cadet Pathway",priority:4,due:'2026-05-01',project:'Personal',labels:['flight'],steps:[
+    'Go to swacareers.southwestair.com and search Destination 225 Cadet',
+    'Create or sign in to your candidate profile',
+    'Read full eligibility list (PPL minimum, school accreditation, age, GPA)',
+    'Upload resume + transcripts + any flight hours documentation',
+    'Answer the short-answer prompts in your own voice — no AI tone',
+    'Submit before midnight CT on May 1, screenshot the confirmation'
+  ]},
+  {id:'6gVhWqc7G836Pcp7',content:"Interview at Mountainside Fitness — Mon 2:00 PM",priority:4,due:'2026-05-04',project:'Personal',labels:[],steps:[
+    'Address: Frank Lloyd Wright & Shea, Scottsdale',
+    'Interviewer: Zac · (480) 234-0592',
+    'Iron the suit Sunday night, polish dress shoes',
+    'Print 2 copies of resume, bring a pen and notepad',
+    'Leave 30 min early — arrive 5–10 min before 2:00 PM',
+    'Prep 3 stories: hardest workout you led, conflict with a member, why fitness',
+    'Have 2 questions ready about ramp/path to PT or manager'
+  ]},
+  {id:'6gVV2WRJhqc3xQwP',content:"URGENT: Send Reel Insights to Computer",priority:4,due:'2026-04-28',project:'Inbox',labels:[],steps:[
+    'Open Instagram → marshmallow Reel → View Insights',
+    'Screenshot: views, reach, likes, comments, shares, saves',
+    'Tap retention graph and screenshot that too',
+    'Drop the screenshots in this chat — OpenClaw will route to me'
+  ]},
+  {id:'6gVVgQmr4Pr6hM4w',content:"Review website for Stay Classy LLC on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Business'],steps:[
+    'Open dashboard.stripe.com/settings/business',
+    'Confirm business name, address, support email match the live site',
+    'Click Update website → paste the public URL Stripe will see',
+    'Save and watch for any red banner about additional info needed'
+  ]},
+  {id:'6gVVgRPvgmmpxPqP',content:"Re-enable 2-step auth on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Security'],steps:[
+    'Open dashboard.stripe.com/settings/user',
+    'If you did NOT turn 2FA off Apr 26 → reset password first',
+    'Two-step auth → Enable → choose Authenticator App (not SMS)',
+    'Scan the QR with Authy or Google Authenticator',
+    'Save the backup codes in 1Password / a notes file you control'
+  ]},
+  {id:'6gVjfjxWFG3FV3jP',content:"Schedule Queen Creek PBR Reel REPOST — 6:30 PM MST",priority:4,due:'2026-04-29',project:'Inbox',labels:['instagram','reel-queue'],steps:[
+    'Open the recut version (no music, native audio only)',
+    'Verify the rider was not injured in this run before posting',
+    'Caption ready in @raine_PBR_caption file',
+    'Use Meta Business Suite → Schedule → 6:30 PM MST',
+    'Confirm scheduled, then close — do not edit again'
+  ]},
+  {id:'6gVqVcx4Jj87hRG7',content:"Submit English Project",priority:3,due:'2026-05-03',project:'Personal',labels:[],steps:[
+    'You work May 1 4–9:30pm and May 3 3–9:30pm — finish by May 2',
+    'Re-read the rubric, highlight every required element',
+    'Block 90 min Friday morning, 90 min Saturday morning',
+    'Read aloud once for flow before submitting',
+    'Upload to Canvas, screenshot the submission receipt'
+  ]},
+  {id:'6gVVgW63vvhVpvGP',content:"Check FAFSA 2026–27 results",priority:3,due:'2026-05-01',project:'Inbox',labels:['School'],steps:[
+    'Sign in at studentaid.gov',
+    'My Activity → 2026–27 FAFSA Form',
+    'If processed: download SAR, note your SAI',
+    'Forward results to Maricopa financial aid office if needed'
+  ]},
+  {id:'6gVVqjg89HWrXc9P',content:"Post Queen Creek PBR Reel (bull riding)",priority:3,due:'2026-04-29',project:'Inbox',labels:['instagram','rodeo'],steps:[
+    'Top window: Tue 6:30–8:30 PM MST',
+    'Pick the best of the 2 audio options — native usually wins',
+    'Caption + hashtags already drafted in Content tab',
+    'Post, then engage on 5 rodeo accounts in the next 30 min'
+  ]},
+  {id:'6gVVgWpfmcHjpggP',content:"Verify Maricopa CC password reset",priority:3,due:'2026-04-28',project:'Inbox',labels:['School','Security'],steps:[
+    'If you did the reset → ignore, mark done',
+    'If not you → call Maricopa IT: 480-731-8632',
+    'Account: GRA2172595@maricopa.edu',
+    'After confirming, set a new strong password and add 2FA'
+  ]},
+  {id:'6gVQCCq7mHFHj8qf',content:"Get better suit shirts when bills are covered",priority:3,due:'2026-05-03',project:'Personal',labels:['money'],steps:[
+    'Check Money tab — bills paid this cycle?',
+    'Budget cap: $80 total for 2 shirts',
+    'White + light blue, slim fit, non-iron',
+    'Try Charles Tyrwhitt sale or Macy\'s clearance first'
+  ]},
+  {id:'6gVQCCrmqMJRmM37',content:"Research Southwest Destination 225° requirements",priority:3,due:null,project:'Personal',labels:['flight'],steps:[
+    'Read the official Destination 225° page top to bottom',
+    'Note the 4 pathway tracks and pick the one that fits',
+    'Map: PPL → instrument → commercial → CFI → hours',
+    'Write your own 24-month plan in Flight tab'
+  ]},
+  {id:'6gVVhWX8mwFVwpfw',content:"Bulk-delete email trash piles in Gmail (~60)",priority:2,due:'2026-04-29',project:'Inbox',labels:[],steps:[
+    'Search: category:promotions older_than:30d → Select all → Delete',
+    'Search: from:(noreply OR no-reply) older_than:14d → Delete',
+    'Empty Trash to actually free space',
+    '~60 messages, under 2 minutes total'
+  ]},
+  {id:'6gVVgXWVP2wGwm4w',content:"Confirm 4 recent Dropbox sign-ins",priority:2,due:'2026-04-28',project:'Inbox',labels:['Security'],steps:[
+    'Open dropbox.com/account/security',
+    'Review the 4 sessions from Apr 24–27',
+    'Sign out any device or location you don\'t recognize',
+    'Enable 2FA if not already on'
+  ]},
+  {id:'6gVQCCrpcHWp7w4f',content:"🚗 Get radiator flushed and air filter replaced",priority:2,due:'2026-06-26',project:'Personal',labels:['errand'],steps:[
+    'Get a quote from 2 local shops (Brakes Plus, Big O)',
+    'Coolant flush typically $90–130, cabin filter $30–50',
+    'Schedule a Saturday morning slot',
+    'Keep the receipt for maintenance log'
+  ]},
+  {id:'6gVQCChqQRC387h7',content:"Get scooter tire quote from EaRide Shop",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],steps:[
+    'Call (480) 930-4416 or use earideshop.com quote form',
+    'Spec: solid rubber rear, 10-inch',
+    'Ask install price too — DIY may not be worth it'
+  ]},
+  {id:'6gVQCCx2p86xM4Hf',content:"Hang belts on wall",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],steps:[
+    'Do during the day while mom isn\'t sleeping',
+    'Use 2 small command hooks per belt rack',
+    '15-minute job, no excuses'
+  ]},
+  {id:'6gVhgVxrVcXwGFf7',content:"Reach out to Mr Delima TOMORROW",priority:1,due:null,project:'Personal',labels:[],steps:[
+    'Pick the channel: text, email, or in-person at school',
+    'One-sentence ask — what specifically do you need from him?',
+    'Send before noon — don\'t let it slide another day'
+  ]}
 ];
 
 function _todoistDayBucket(t){
@@ -2942,8 +3002,61 @@ function _todoistDayBucket(t){
   return '3';
 }
 function _todoistDoneMap(){ return ls('todoist_done',{}); }
+let _todoistOpen = {};
 function toggleTodoistTask(id){
   const m=_todoistDoneMap(); m[id]=!m[id]; ss('todoist_done',m); renderDiscipline();
+}
+function toggleTodoistOpen(id){
+  _todoistOpen[id] = !_todoistOpen[id];
+  renderDiscipline();
+  // After re-render, focus the textarea if opened
+  if(_todoistOpen[id]){
+    setTimeout(()=>{
+      const ta=document.getElementById('task-fb-'+id);
+      if(ta) ta.focus();
+    }, 50);
+  }
+}
+async function sendTaskFeedback(taskId){
+  const ta=document.getElementById('task-fb-'+taskId);
+  if(!ta) return;
+  const text=(ta.value||'').trim();
+  if(!text){ toast('Type something first'); return; }
+  const task = TODOIST_TASKS.find(x=>x.id===taskId);
+  if(!task){ toast('Task not found'); return; }
+  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  if(!token){ toast('⚠ Not authenticated'); return; }
+  // Build prefixed message so OpenClaw knows context
+  const msg = `[task: ${task.content}] ${text}`;
+  const tab_context = {
+    task_id: task.id,
+    task_content: task.content,
+    task_priority: task.priority,
+    task_due: task.due,
+    task_project: task.project,
+    task_steps: task.steps || [],
+    user_note: text
+  };
+  ta.disabled = true;
+  try {
+    const res = await fetch('/api/chat/message', {
+      method: 'POST',
+      headers: _chatApiHeaders(),
+      body: JSON.stringify({ text: msg, role: 'user', context_tab: 'today', tab_context: tab_context })
+    });
+    const j = await res.json();
+    if(j.ok){
+      _chatMessages.push({ id: j.message_id, text: msg, role: 'user', ts: new Date().toISOString() });
+      renderChatMessages(_chatMessages);
+      ta.value = '';
+      toast('→ Sent to OpenClaw');
+      _todoistOpen[taskId] = false;
+      renderDiscipline();
+    } else {
+      toast('⚠ ' + (j.error||'Send failed'));
+    }
+  } catch(e){ toast('⚠ Network error'); }
+  finally { ta.disabled = false; }
 }
 
 function renderDiscipline(){
@@ -2987,22 +3100,35 @@ function renderDiscipline(){
     out+=`<div style="font-size:0.6rem;font-weight:700;color:${colors[b]};text-transform:uppercase;letter-spacing:0.08em;margin:var(--s3) 0 var(--s2);">${labels[b]} · ${visible.length}</div>`;
     visible.forEach(t=>{
       const isDone=!!doneMap[t.id];
+      const isOpen=!!_todoistOpen[t.id];
       const dueStr=t.due?new Date(t.due+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
       const pBadge=t.priority===4?'<span class="pill pill-crimson" style="font-size:0.55rem;">P1</span>':t.priority===3?'<span class="pill" style="font-size:0.55rem;background:var(--amber-dim,#3a2a10);color:var(--amber);">P2</span>':'';
       const labelChips=(t.labels||[]).slice(0,2).map(l=>`<span style="font-size:0.55rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">#${l}</span>`).join(' ');
-      out+=`<div class="task-chip" style="align-items:flex-start;${isDone?'opacity:0.5':''}">
-        <div class="task-chip-check ${isDone?'done':''}" onclick="toggleTodoistTask('${t.id}')" style="flex-shrink:0;margin-top:2px;">${isDone?'✓':''}</div>
-        <div class="task-chip-text" style="flex:1;">
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-            ${pBadge}
-            <span style="font-weight:600;${isDone?'text-decoration:line-through':''}">${t.content}</span>
+      const stepsHtml=(t.steps||[]).map((s,i)=>`<li style="margin:4px 0;color:var(--text-2);font-size:var(--text-xs);line-height:1.5;"><span style="color:var(--blue);font-weight:700;margin-right:6px;">${i+1}.</span>${s}</li>`).join('');
+      const expanded = isOpen ? `<div class="task-expand" style="margin-top:var(--s3);padding-top:var(--s3);border-top:1px dashed var(--border);">
+          ${stepsHtml ? `<div style="font-size:0.6rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Steps</div><ol style="margin:0 0 var(--s3) 0;padding-left:0;list-style:none;">${stepsHtml}</ol>` : ''}
+          <div style="font-size:0.6rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Send to OpenClaw</div>
+          <textarea id="task-fb-${t.id}" rows="2" placeholder="Stuck? Update? Question? Type and send..." class="chat-textarea" style="width:100%;margin-bottom:6px;font-size:var(--text-xs);min-height:54px;" onclick="event.stopPropagation()" onkeydown="event.stopPropagation();if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendTaskFeedback('${t.id}');}"></textarea>
+          <div style="display:flex;gap:6px;justify-content:flex-end;">
+            <button class="btn-sm btn-ghost" onclick="event.stopPropagation();sendTaskFeedback('${t.id}')" style="min-height:unset;background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue);padding:6px 12px;font-weight:600;">→ Send to OpenClaw</button>
           </div>
-          <div class="task-chip-cat" style="margin-top:3px;line-height:1.5;">${t.why}</div>
-          <div style="display:flex;gap:8px;margin-top:4px;align-items:center;">
-            <span style="font-size:0.6rem;color:var(--text-3);">${t.project}${dueStr?' · '+dueStr:''}</span>
-            ${labelChips}
+        </div>` : '';
+      out+=`<div class="task-chip" style="align-items:flex-start;flex-direction:column;${isDone?'opacity:0.5':''};cursor:pointer;" onclick="toggleTodoistOpen('${t.id}')">
+        <div style="display:flex;align-items:flex-start;gap:var(--s3);width:100%;">
+          <div class="task-chip-check ${isDone?'done':''}" onclick="event.stopPropagation();toggleTodoistTask('${t.id}')" style="flex-shrink:0;margin-top:2px;">${isDone?'✓':''}</div>
+          <div class="task-chip-text" style="flex:1;">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              ${pBadge}
+              <span style="font-weight:600;${isDone?'text-decoration:line-through':''}">${t.content}</span>
+              <span style="margin-left:auto;color:var(--text-3);font-size:0.7rem;transition:transform .15s;display:inline-block;${isOpen?'transform:rotate(180deg);':''}">▾</span>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:4px;align-items:center;">
+              <span style="font-size:0.6rem;color:var(--text-3);">${t.project}${dueStr?' · '+dueStr:''}</span>
+              ${labelChips}
+            </div>
           </div>
         </div>
+        ${expanded}
       </div>`;
     });
   });
