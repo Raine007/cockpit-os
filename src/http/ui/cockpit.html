@@ -3398,58 +3398,74 @@ document.addEventListener('DOMContentLoaded',()=>{
   },60000);
   // Refresh prices every 15 minutes if app stays open
   setInterval(fetchLivePrices, 15*60*1000);
-  // Vault status tile (Phase 2 of Obsidian integration). Polls every 10s.
-  // Color rules:
-  //   grey   — vault never seen (bridge not running, or vault disabled)
-  //   amber  — vault seen, but in dry-run mode (writes are no-ops)
-  //   green  — vault enabled, real writes are happening
-  //   red    — last reported error from the bridge
-  refreshVaultStatus();
-  setInterval(refreshVaultStatus, 10000);
 });
+</script>
 
-async function refreshVaultStatus(){
-  const dot = document.getElementById('vault-dot');
-  const btn = document.getElementById('vault-btn');
-  if(!dot || !btn) return;
-  const token = localStorage.getItem('cockpit_token') || '';
-  if(!token){
-    dot.style.background = 'var(--text-3)';
-    btn.title = 'Vault status (sign in first)';
-    return;
+<!--
+  Vault status tile — Phase 2 of Obsidian integration.
+
+  This block is intentionally a fully self-contained script at the end of
+  body so it runs even if any other script in the page errors out before
+  DOMContentLoaded fires. It does NOT depend on the big DOMContentLoaded
+  bundle above; it sets up its own short interval and runs immediately.
+-->
+<script>
+(function(){
+  function getToken(){
+    try { return localStorage.getItem('_cockpit_admin_token') || ''; } catch(_) { return ''; }
   }
-  try {
-    const res = await fetch('/api/vault/status', {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    const s = (data && data.status) || {};
-    let color = 'var(--text-3)';
-    let lines = [];
-    if(s.last_error){
-      color = 'var(--red, #ef4444)';
-      lines.push('Last error: ' + s.last_error);
-    } else if(!s.enabled || !s.last_seen){
-      color = 'var(--text-3)';
-      lines.push('Vault not connected (bridge offline or disabled)');
-    } else if(s.dry_run){
-      color = 'var(--amber)';
-      lines.push('Vault in dry-run mode (no writes)');
-    } else {
-      color = 'var(--green)';
-      lines.push('Vault connected');
-    }
-    if(s.vault_root) lines.push('Root: ' + s.vault_root);
-    if(s.last_write) lines.push('Last write: ' + new Date(s.last_write).toLocaleTimeString());
-    if(typeof s.writes_today === 'number') lines.push('Writes today: ' + s.writes_today);
+  function setPill(color, lines){
+    var dot = document.getElementById('vault-dot');
+    var btn = document.getElementById('vault-btn');
+    if(!dot || !btn) return;
     dot.style.background = color;
     btn.title = lines.join('\n');
-  } catch (err) {
-    dot.style.background = 'var(--text-3)';
-    btn.title = 'Vault status unavailable: ' + err;
   }
-}
+  async function refresh(){
+    var dot = document.getElementById('vault-dot');
+    if(!dot) return; // header not rendered yet — try again next tick
+    var token = getToken();
+    if(!token){
+      setPill('var(--text-3)', ['Vault status (sign in first)']);
+      return;
+    }
+    try {
+      var res = await fetch('/api/vault/status', { headers: { 'Authorization': 'Bearer ' + token }});
+      if(!res.ok){
+        setPill('var(--text-3)', ['Vault status: HTTP ' + res.status]);
+        return;
+      }
+      var data = await res.json();
+      var s = (data && data.status) || {};
+      var color = 'var(--text-3)';
+      var lines = [];
+      if(s.last_error){
+        color = 'var(--red, #ef4444)';
+        lines.push('Last error: ' + s.last_error);
+      } else if(!s.enabled || !s.last_seen){
+        color = 'var(--text-3)';
+        lines.push('Vault not connected (bridge offline or disabled)');
+      } else if(s.dry_run){
+        color = '#f59e0b'; /* amber */
+        lines.push('Vault in dry-run mode (no writes)');
+      } else {
+        color = '#10b981'; /* green */
+        lines.push('Vault connected');
+      }
+      if(s.vault_root) lines.push('Root: ' + s.vault_root);
+      if(s.last_write) lines.push('Last write: ' + new Date(s.last_write).toLocaleTimeString());
+      if(typeof s.writes_today === 'number') lines.push('Writes today: ' + s.writes_today);
+      setPill(color, lines);
+    } catch(err) {
+      setPill('var(--text-3)', ['Vault status unavailable: ' + err]);
+    }
+  }
+  // Expose for manual debug from the console.
+  window.refreshVaultStatus = refresh;
+  // Run now and every 10s, regardless of other script state.
+  refresh();
+  setInterval(refresh, 10000);
+})();
 </script>
 <!-- SYNC PANEL MODAL -->
 <div id="sync-panel" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);" onclick="if(event.target===this)hideSyncPanel()">
