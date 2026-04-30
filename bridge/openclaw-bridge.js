@@ -7,7 +7,8 @@
  *
  * What it does:
  *  1. Polls GET /api/chat/pending every 3 seconds for kind=chat, status=queued jobs.
- *  2. Forwards each job's message text to OpenClaw via POST {OPENCLAW_GATEWAY_URL}/v1/messages.
+ *  2. Forwards each job's message text to OpenClaw via POST {OPENCLAW_GATEWAY_URL}/api/sessions/main/messages.
+ *     Falls back to /v1/chat/completions (OpenAI-compat) if the session route is missing.
  *  3. Inspects the response:
  *     - Contains "[ASK]"     → POST /api/feedback/ask  (clarification needed)
  *     - Contains "[ESCALATE]" or indicates video editing → POST /api/chat/escalate
@@ -111,34 +112,49 @@ async function cockpitPost(path, body) {
 
 /**
  * Send a message to OpenClaw and return its response text.
- * Uses the standard OpenClaw HTTP gateway API: POST /v1/messages
- * with a Bearer token in the Authorization header.
+ *
+ * Tries OpenClaw's native session HTTP API first:
+ *   POST /api/sessions/main/messages   body: { message: "..." }
+ *
+ * If that 404s (older / different gateway), falls back to the OpenAI-compatible
+ * route, which must be enabled in openclaw.json:
+ *   POST /v1/chat/completions          body: { model, messages: [...] }
  *
  * If the job has a feedback_answer attached (from a re-queue after /feedback/answer),
  * it's appended to the message so OpenClaw has the full context.
  */
-async function sendToOpenClaw(job) {
-  const text = job.message_text || job.text || '';
-  let content = text;
-  if (job.feedback_answer) {
-    content = `${text}\n\n[User answered clarifying question: ${job.feedback_answer}]`;
+function extractText(json) {
+  if (!json || typeof json !== 'object') return '';
+  // /api/sessions/.../messages typical shapes
+  if (typeof json.response === 'string') return json.response;
+  if (typeof json.text === 'string') return json.text;
+  if (typeof json.content === 'string') return json.content;
+  if (typeof json.reply === 'string') return json.reply;
+  if (typeof json.output_text === 'string') return json.output_text;
+  if (json.message && typeof json.message.content === 'string') return json.message.content;
+  if (json.message && typeof json.message.text === 'string') return json.message.text;
+  // /v1/chat/completions OpenAI shape
+  if (Array.isArray(json.choices) && json.choices[0]) {
+    const c = json.choices[0];
+    if (c.message && typeof c.message.content === 'string') return c.message.content;
+    if (typeof c.text === 'string') return c.text;
   }
+  // /v1/responses shape
+  if (Array.isArray(json.output) && json.output.length) {
+    const parts = [];
+    for (const item of json.output) {
+      if (Array.isArray(item.content)) {
+        for (const c of item.content) {
+          if (typeof c.text === 'string') parts.push(c.text);
+        }
+      }
+    }
+    if (parts.length) return parts.join('\n');
+  }
+  return '';
+}
 
-  const url = `${OPENCLAW_GATEWAY_URL}/v1/messages`;
-  const payload = {
-    message: content,
-    message_id: job.message_id,
-    job_id: job.id,
-    // Include full context if available
-    context: {
-      source: 'cockpit-bridge',
-      job_id: job.id,
-      message_id: job.message_id,
-    },
-  };
-
-  log('debug', `→ OpenClaw: ${content.slice(0, 80)}...`);
-
+async function tryEndpoint(url, payload, label) {
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -147,15 +163,59 @@ async function sendToOpenClaw(job) {
     },
     body: JSON.stringify(payload),
   });
-
+  const bodyText = await res.text();
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`OpenClaw POST /v1/messages → HTTP ${res.status}: ${text}`);
+    const err = new Error(`OpenClaw POST ${label} → HTTP ${res.status}: ${bodyText.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
+  let json;
+  try { json = JSON.parse(bodyText); } catch { json = { text: bodyText }; }
+  const text = extractText(json);
+  if (!text) {
+    log('debug', `${label} returned no recognizable text field`, { shape: Object.keys(json || {}) });
+    return JSON.stringify(json).slice(0, 800);
+  }
+  return text;
+}
+
+async function sendToOpenClaw(job) {
+  const text = job.message_text || job.text || '';
+  let content = text;
+  if (job.feedback_answer) {
+    content = `${text}\n\n[User answered clarifying question: ${job.feedback_answer}]`;
+  }
+  if (!content || !content.trim()) {
+    throw new Error('empty message text — cannot forward to OpenClaw');
   }
 
-  const json = await res.json();
-  // OpenClaw typically returns { response: string } or { text: string } or { content: string }
-  return json.response || json.text || json.content || JSON.stringify(json);
+  log('debug', `→ OpenClaw: ${content.slice(0, 80)}...`);
+
+  // 1. Try native session API
+  try {
+    return await tryEndpoint(
+      `${OPENCLAW_GATEWAY_URL}/api/sessions/main/messages`,
+      { message: content, source: 'cockpit-bridge', message_id: job.message_id, job_id: job.id },
+      '/api/sessions/main/messages'
+    );
+  } catch (e) {
+    if (e.status !== 404 && e.status !== 405) throw e;
+    log('info', `session route unavailable (HTTP ${e.status}), falling back to /v1/chat/completions`);
+  }
+
+  // 2. Fall back to OpenAI-compatible chat completions
+  return await tryEndpoint(
+    `${OPENCLAW_GATEWAY_URL}/v1/chat/completions`,
+    {
+      model: process.env.OPENCLAW_MODEL || 'openclaw:main',
+      messages: [
+        { role: 'system', content: 'You are OpenClaw, helping Raine via the Cockpit OS chat. Keep replies concise. If the user asks for a video edit (Reels/captions/9:16/blur N-numbers), respond with [ESCALATE] followed by what they asked for. If you need clarification before proceeding, respond with [ASK] followed by your single clarifying question.' },
+        { role: 'user', content },
+      ],
+      stream: false,
+    },
+    '/v1/chat/completions'
+  );
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -213,6 +273,7 @@ function extractQuestion(responseText) {
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 const _inFlight = new Set();
+const _failCounts = new Map();
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* Core job processor                                                          */
@@ -292,9 +353,25 @@ async function processJob(job) {
     }
 
   } catch (err) {
-    log('error', `job ${jobId} failed`, { error: String(err) });
-    // Do NOT mark as done — leave it queued so the next poll retries.
-    // (In production you'd want a retry counter to avoid infinite loops.)
+    const errMsg = String(err);
+    log('error', `job ${jobId} failed`, { error: errMsg });
+    // Track retry count; after 3 failures, post the error back as a reply so the user
+    // sees what went wrong and we stop hammering OpenClaw forever.
+    const fails = (_failCounts.get(jobId) || 0) + 1;
+    _failCounts.set(jobId, fails);
+    if (fails >= 3) {
+      try {
+        await cockpitPost('/api/chat/reply', {
+          message_id: job.message_id,
+          reply_text: `⚠️ Bridge could not reach OpenClaw after ${fails} tries.\n\n${errMsg.slice(0, 500)}`,
+          role: 'assistant',
+        });
+        log('info', `job ${jobId}: error reply posted after ${fails} failures`);
+      } catch (e) {
+        log('error', `job ${jobId}: failed to post error reply`, { error: String(e) });
+      }
+      _failCounts.delete(jobId);
+    }
   } finally {
     _inFlight.delete(jobId);
   }
