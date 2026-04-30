@@ -492,6 +492,33 @@ function genId(prefix: string): string {
 }
 
 /**
+ * Phase 4: Enqueue a daily-note vault job. Best-effort; swallows errors so a
+ * vault failure never breaks chat. Skips silently when vault is disabled.
+ */
+async function enqueueDailyNoteJob(
+  ctx: CockpitContext,
+  ts: string,
+  text: string,
+  source = 'chat',
+): Promise<void> {
+  try {
+    const status = await getVaultStatus(ctx);
+    if (!status?.enabled) return;
+    const job: VaultJob = {
+      id: genId('vjob'),
+      kind: 'daily-note',
+      payload: { text, source },
+      status: 'queued',
+      created_at: ts,
+      updated_at: ts,
+    };
+    await upsertVaultJob(ctx, job);
+  } catch (_) {
+    /* never let vault enqueue failure surface to chat callers */
+  }
+}
+
+/**
  * POST /api/chat/message
  * body: { text: string, role: "user" }
  * Appends to chat_messages and enqueues a pending_job.
@@ -519,6 +546,9 @@ async function handlePostChatMessage(
   if (contextTab) msg.context_tab = contextTab;
   if (tabContext !== undefined && tabContext !== null) msg.tab_context = tabContext;
   await appendChatMessage(ctx, msg);
+
+  // Phase 4: capture every chat message into Daily Notes via vault job.
+  await enqueueDailyNoteJob(ctx, ts, `[user] ${text}`, 'chat');
 
   const job: PendingJob = {
     id: jobId,
@@ -598,6 +628,10 @@ async function handlePostChatReply(
     ...(body.task_created ? { task_created: body.task_created as { todoist_id: string; project: string } } : {}),
   };
   await appendChatMessage(ctx, replyMsg);
+
+  // Phase 4: capture replies into Daily Notes too. Uses the role as the speaker tag.
+  const speaker = role === 'computer' ? 'computer' : 'OC';
+  await enqueueDailyNoteJob(ctx, ts, `[${speaker}] ${reply_text}`, 'chat');
 
   // Mark the pending_job for this message_id as done.
   const jobs = await getPendingJobs(ctx);

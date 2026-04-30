@@ -190,10 +190,49 @@ COCKPIT_VAULT_PATH=/mnt/f/Vault node bridge/seed-tasks.js
 The script refuses to overwrite a non-empty `Active.md`. Pass `--force`
 to clobber, or `--dry-run` to preview without writing.
 
-## What's coming next
+## Phase 4 — chat → Daily Notes capture (live)
 
-Phase 4: chat capture — every Cockpit chat message appends to today's
-daily note via the new `daily-note` job kind.
+Every chat message and reply appends a timestamped line to today's
+daily note in `Daily Notes/YYYY-MM-DD.md`. The conversation is
+mirrored into the vault automatically — no UI changes, no manual sync.
+
+### How it works
+
+1. The dashboard posts to `/api/chat/messages` (user) or
+   `/api/chat/replies` (assistant). Both handlers call
+   `enqueueDailyNoteJob()` after the message is appended to the in-memory
+   chat log.
+2. The helper checks `getVaultStatus(ctx).enabled`. If the vault is
+   disabled, it returns silently — chat is unaffected.
+3. If enabled, it enqueues a `daily-note` vault job with the formatted
+   text. The bridge picks it up on its next poll and calls
+   `vault.appendDailyNote(text, source)`.
+4. The line written to disk looks like:
+
+   ```markdown
+   - **15:24** _(chat)_ [user] What's the latest on the cockpit deploy?
+   - **15:24** _(chat)_ [OC] Revision 00020 is live, 45 active tasks.
+   ```
+
+   Speaker prefix is `[user]` for user messages and `[OC]` for
+   assistant replies (`[computer]` if the role is `computer`). Source
+   tag is always `chat` so daily notes can distinguish chat capture
+   from manual notes or task work.
+
+### Failure mode
+
+The enqueue is best-effort and wrapped in a try/catch — if the vault
+queue is unreachable, chat continues working. The daily note simply
+misses that line; nothing rolls back. If the bridge is offline, jobs
+stay queued on the server and drain when it reconnects.
+
+### Tests
+
+Three tests in `test/http-chat.test.ts` cover the wiring:
+
+- enqueues a `daily-note` job for user messages when vault is enabled
+- enqueues a `daily-note` job for replies (role → speaker mapping)
+- does **not** enqueue when vault is disabled
 
 Each phase ships independently, with tests, and behind dry-run until
 verified.

@@ -714,3 +714,121 @@ describe('feedback ask/answer cycle', () => {
     assert.equal(requeuedJob!.feedback_answer, 'Use the sunset taxi clip');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Phase 4: chat → daily-note vault job                                */
+/* ------------------------------------------------------------------ */
+
+describe('Phase 4: chat capture to Daily Notes', () => {
+  it('enqueues a daily-note vault job for incoming user messages when vault is enabled', async () => {
+    // Enable vault
+    const enableRes = await routeRequest({
+      method: 'POST',
+      path: '/api/vault/status',
+      headers: auth(),
+      body: { enabled: true, dry_run: true, vault_root: '/mnt/f/Vault' },
+    });
+    assert.equal(enableRes.status, 200);
+
+    // Snapshot pending count before
+    const beforeRes = await routeRequest({
+      method: 'GET',
+      path: '/api/vault/jobs/pending',
+      headers: auth(),
+    });
+    const before = ((beforeRes.body as { jobs: unknown[] }).jobs || []).length;
+
+    // Send a chat message
+    const msgRes = await routeRequest({
+      method: 'POST',
+      path: '/api/chat/message',
+      headers: auth(),
+      body: { text: 'Phase 4 capture probe', role: 'user' },
+    });
+    assert.equal(msgRes.status, 200);
+
+    // The daily-note job should now be queued
+    const afterRes = await routeRequest({
+      method: 'GET',
+      path: '/api/vault/jobs/pending',
+      headers: auth(),
+    });
+    const after = (afterRes.body as { jobs: { kind: string; payload: { text: string; source?: string } }[] }).jobs;
+    assert.ok(after.length > before, 'a new vault job should be enqueued');
+    const dailyNote = after.find((j) => j.kind === 'daily-note' && j.payload.text.includes('Phase 4 capture probe'));
+    assert.ok(dailyNote, 'a daily-note job with the chat text should be present');
+    assert.equal(dailyNote!.payload.text, '[user] Phase 4 capture probe');
+    assert.equal(dailyNote!.payload.source, 'chat');
+  });
+
+  it('enqueues a daily-note vault job for replies', async () => {
+    // Vault already enabled from prior test; explicit just in case test runs alone.
+    await routeRequest({
+      method: 'POST',
+      path: '/api/vault/status',
+      headers: auth(),
+      body: { enabled: true, dry_run: true, vault_root: '/mnt/f/Vault' },
+    });
+
+    // First create a chat message to reply to
+    const msgRes = await routeRequest({
+      method: 'POST',
+      path: '/api/chat/message',
+      headers: auth(),
+      body: { text: 'parent message', role: 'user' },
+    });
+    const { message_id } = msgRes.body as { message_id: string };
+
+    // Post a reply
+    const replyRes = await routeRequest({
+      method: 'POST',
+      path: '/api/chat/reply',
+      headers: auth(),
+      body: { message_id, reply_text: 'reply body', role: 'assistant' },
+    });
+    assert.equal(replyRes.status, 200);
+
+    const pendingRes = await routeRequest({
+      method: 'GET',
+      path: '/api/vault/jobs/pending',
+      headers: auth(),
+    });
+    const jobs = (pendingRes.body as { jobs: { kind: string; payload: { text: string; source?: string } }[] }).jobs;
+    const replyJob = jobs.find((j) => j.kind === 'daily-note' && j.payload.text.includes('reply body'));
+    assert.ok(replyJob, 'reply should produce a daily-note vault job');
+    assert.equal(replyJob!.payload.text, '[OC] reply body');
+  });
+
+  it('does NOT enqueue when vault is disabled', async () => {
+    // Disable vault
+    await routeRequest({
+      method: 'POST',
+      path: '/api/vault/status',
+      headers: auth(),
+      body: { enabled: false, dry_run: true },
+    });
+
+    const beforeRes = await routeRequest({
+      method: 'GET',
+      path: '/api/vault/jobs/pending',
+      headers: auth(),
+    });
+    const before = ((beforeRes.body as { jobs: unknown[] }).jobs || []).length;
+
+    const msgRes = await routeRequest({
+      method: 'POST',
+      path: '/api/chat/message',
+      headers: auth(),
+      body: { text: 'should not capture', role: 'user' },
+    });
+    assert.equal(msgRes.status, 200);
+
+    const afterRes = await routeRequest({
+      method: 'GET',
+      path: '/api/vault/jobs/pending',
+      headers: auth(),
+    });
+    const after = ((afterRes.body as { jobs: unknown[] }).jobs || []).length;
+    assert.equal(after, before, 'no new vault jobs should be enqueued when vault is disabled');
+  });
+});
