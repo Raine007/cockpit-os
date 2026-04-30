@@ -128,6 +128,7 @@ const PENDING_JOBS_KEY = 'pending_jobs';
 const FEEDBACK_REQUESTS_KEY = 'feedback_requests';
 const VAULT_JOBS_KEY = 'vault_jobs';
 const VAULT_STATUS_KEY = 'vault_status';
+const TASKS_KEY = 'tasks';
 
 /* ── chat_messages ── */
 
@@ -278,4 +279,87 @@ export async function setVaultStatus(
   status: VaultStatus,
 ): Promise<void> {
   await setState(ctx, CHAT_UID, VAULT_STATUS_KEY, status);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tasks                                                                       */
+/*                                                                             */
+/* Vault is source of truth (Tasks/Active.md). The server holds a cache so the */
+/* dashboard can render fast without hitting the bridge on every page load.    */
+/* The bridge reconciler keeps this cache in sync via                          */
+/*   GET  /api/tasks/snapshot  → reads cache                                   */
+/*   PUT  /api/tasks/snapshot  → writes cache (last-write-wins applied)        */
+/* Storage key: `tasks` (single document containing the whole Task[] array).   */
+/* -------------------------------------------------------------------------- */
+
+export type TaskOwner = 'openclaw' | 'claude' | 'raine' | 'perplexity';
+export type TaskPriority = 'high' | 'medium-high' | 'low' | null;
+
+export interface TaskFeedback {
+  author: string;
+  ts: string;
+  text: string;
+}
+
+export interface TaskEscalation {
+  from: string;
+  to: string;
+  ts: string;
+  reason: string;
+}
+
+export interface TaskArtifact {
+  name: string;
+  url: string;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  done: boolean;
+  due: string | null;
+  completed_on: string | null;
+  priority: TaskPriority;
+  tags: string[];
+  owner: TaskOwner;
+  /** ISO timestamp; bumped on every server-side mutation. Used by reconciler. */
+  updated_at: string;
+  notes: string;
+  feedback: TaskFeedback[];
+  escalations: TaskEscalation[];
+  artifacts: TaskArtifact[];
+}
+
+export async function getTasks(ctx: CockpitContext): Promise<Task[]> {
+  const v = await getState(ctx, CHAT_UID, TASKS_KEY);
+  return Array.isArray(v) ? (v as Task[]) : [];
+}
+
+export async function setTasks(
+  ctx: CockpitContext,
+  tasks: Task[],
+): Promise<void> {
+  await setState(ctx, CHAT_UID, TASKS_KEY, tasks);
+}
+
+export async function upsertTask(
+  ctx: CockpitContext,
+  task: Task,
+): Promise<void> {
+  const tasks = await getTasks(ctx);
+  const idx = tasks.findIndex((t) => t.id === task.id);
+  if (idx >= 0) {
+    tasks[idx] = task;
+  } else {
+    tasks.push(task);
+  }
+  await setTasks(ctx, tasks);
+}
+
+export async function getTaskById(
+  ctx: CockpitContext,
+  id: string,
+): Promise<Task | null> {
+  const tasks = await getTasks(ctx);
+  return tasks.find((t) => t.id === id) || null;
 }

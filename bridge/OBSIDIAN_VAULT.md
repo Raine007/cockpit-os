@@ -132,10 +132,65 @@ Then check the daily note in Obsidian:
 `F:\Vault\Daily Notes\YYYY-MM-DD.md` should now contain a timestamped
 line.
 
-## What's coming next
+## Phase 3 — task system (live)
 
-Phase 3: two-way task sync (stable IDs embedded as HTML comments in
-markdown lines, last-write-wins reconciler).
+Tasks live in `Tasks/Active.md` (open) and `Tasks/Done.md` (archived
+after a 24h grace period). Format is Obsidian Tasks plugin compatible:
+
+```markdown
+- [ ] Title text 📅 2026-05-03 🔺 #flying @openclaw
+  <!-- id:t_8f2a updated:2026-04-30T22:24:00Z owner:openclaw -->
+  - notes: free text, may continue on
+    another indented line
+  - feedback (raine, 2026-04-30 15:24): comment text
+  - escalation: openclaw → claude (2026-04-30 15:31, reason: too heavy)
+  - artifact: [name](https://example/url)
+```
+
+Glyphs: 🔺 high, 🔼 medium-high, 🔽 low. Owners: `openclaw`, `claude`,
+`raine`, `perplexity`. Stable IDs (`t_xxxxxxxx`) live in HTML comments
+so they survive every edit.
+
+### Round-trip flow
+
+1. **Vault → Server.** The bridge watches `Tasks/` (1.5s debounce) and
+   polls every 60s. On change it parses `Active.md`, fetches the server
+   snapshot, merges last-write-wins by `updated_at`, and writes back.
+2. **Server → Vault.** When the dashboard creates a task or marks one
+   done via `/api/tasks/...`, the next reconcile pushes that change
+   into `Active.md`.
+3. **Done.md.** Tasks marked done stay in `Active.md` for 24h (so you
+   can still see them on the dashboard), then get appended to
+   `Done.md` grouped by completion date.
+
+### Endpoints (all require admin token)
+
+```
+GET    /api/tasks                 — active tasks
+GET    /api/tasks/all             — active + done
+POST   /api/tasks                 — create
+PATCH  /api/tasks/:id             — partial update
+POST   /api/tasks/:id/done        — mark done
+POST   /api/tasks/:id/feedback    — append feedback entry
+POST   /api/tasks/:id/escalate    — hand off to another owner
+GET    /api/tasks/snapshot        — bridge reads canonical state
+PUT    /api/tasks/snapshot        — bridge writes merged state
+```
+
+### One-time seed
+
+On first deploy, run from WSL once to populate `Active.md` from the
+legacy task list:
+
+```bash
+cd ~/cockpit-os
+COCKPIT_VAULT_PATH=/mnt/f/Vault node bridge/seed-tasks.js
+```
+
+The script refuses to overwrite a non-empty `Active.md`. Pass `--force`
+to clobber, or `--dry-run` to preview without writing.
+
+## What's coming next
 
 Phase 4: chat capture — every Cockpit chat message appends to today's
 daily note via the new `daily-note` job kind.

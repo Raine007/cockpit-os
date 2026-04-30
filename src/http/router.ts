@@ -60,12 +60,21 @@ import {
   upsertVaultJob,
   getVaultStatus,
   setVaultStatus,
+  getTasks,
+  setTasks,
+  upsertTask,
+  getTaskById,
   type ChatMessage,
   type PendingJob,
   type FeedbackRequest,
   type VaultJob,
   type VaultJobKind,
   type VaultStatus,
+  type Task,
+  type TaskOwner,
+  type TaskPriority,
+  type TaskFeedback,
+  type TaskEscalation,
 } from '../state/store.js';
 
 import {
@@ -943,6 +952,256 @@ function matchVaultJobResult(p: string): string | null {
   return decodeURIComponent(middle);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Task endpoints (Phase 3: Obsidian-first task system)                        */
+/*                                                                             */
+/* The vault is source of truth. The server holds a Firestore-backed cache so  */
+/* the dashboard renders fast. The bridge reconciler keeps both in sync via    */
+/* GET/PUT /api/tasks/snapshot. All other endpoints are convenience writers    */
+/* that bump updated_at; the bridge will then push the change into Active.md.  */
+/* -------------------------------------------------------------------------- */
+
+const VALID_TASK_OWNERS: ReadonlyArray<TaskOwner> = [
+  'openclaw',
+  'claude',
+  'raine',
+  'perplexity',
+];
+const VALID_TASK_PRIORITIES: ReadonlyArray<Exclude<TaskPriority, null>> = [
+  'high',
+  'medium-high',
+  'low',
+];
+
+function normalizeTaskInput(
+  input: Partial<Task>,
+  fallback?: Task,
+): Task {
+  const now = new Date().toISOString();
+  const owner: TaskOwner =
+    typeof input.owner === 'string' && VALID_TASK_OWNERS.includes(input.owner as TaskOwner)
+      ? (input.owner as TaskOwner)
+      : fallback?.owner ?? 'openclaw';
+  const priority: TaskPriority =
+    input.priority === null
+      ? null
+      : typeof input.priority === 'string' &&
+        VALID_TASK_PRIORITIES.includes(input.priority as Exclude<TaskPriority, null>)
+      ? (input.priority as TaskPriority)
+      : fallback?.priority ?? null;
+  return {
+    id: input.id ?? fallback?.id ?? genId('t'),
+    title: typeof input.title === 'string' ? input.title : fallback?.title ?? '',
+    done: typeof input.done === 'boolean' ? input.done : fallback?.done ?? false,
+    due: typeof input.due === 'string' ? input.due : fallback?.due ?? null,
+    completed_on:
+      typeof input.completed_on === 'string'
+        ? input.completed_on
+        : fallback?.completed_on ?? null,
+    priority,
+    tags: Array.isArray(input.tags)
+      ? (input.tags as unknown[]).filter((t): t is string => typeof t === 'string')
+      : fallback?.tags ?? [],
+    owner,
+    updated_at: now,
+    notes: typeof input.notes === 'string' ? input.notes : fallback?.notes ?? '',
+    feedback: Array.isArray(input.feedback)
+      ? (input.feedback as TaskFeedback[])
+      : fallback?.feedback ?? [],
+    escalations: Array.isArray(input.escalations)
+      ? (input.escalations as TaskEscalation[])
+      : fallback?.escalations ?? [],
+    artifacts: Array.isArray(input.artifacts)
+      ? input.artifacts as Task['artifacts']
+      : fallback?.artifacts ?? [],
+  };
+}
+
+/** GET /api/tasks — active tasks for dashboard. */
+async function handleTasksList(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const tasks = await getTasks(ctx);
+  return jsonResponse(200, { ok: true, tasks: tasks.filter((t) => !t.done) });
+}
+
+/** GET /api/tasks/all — all tasks including done. */
+async function handleTasksAll(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const tasks = await getTasks(ctx);
+  return jsonResponse(200, { ok: true, tasks });
+}
+
+/** POST /api/tasks — create a task. Server generates id + updated_at. */
+async function handleTaskCreate(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Partial<Task>;
+  if (!body.title || typeof body.title !== 'string') {
+    return badRequest('missing string "title"');
+  }
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const task = normalizeTaskInput({ ...body, id: genId('t') });
+  await upsertTask(ctx, task);
+  return jsonResponse(200, { ok: true, task });
+}
+
+/** PATCH /api/tasks/:id — partial update; bumps updated_at. */
+async function handleTaskPatch(
+  req: CockpitHttpRequest,
+  taskId: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const existing = await getTaskById(ctx, taskId);
+  if (!existing) return badRequest(`task "${taskId}" not found`);
+  const body = (req.body ?? {}) as Partial<Task>;
+  const merged = normalizeTaskInput({ ...body, id: taskId }, existing);
+  await upsertTask(ctx, merged);
+  return jsonResponse(200, { ok: true, task: merged });
+}
+
+/** POST /api/tasks/:id/done — marks done with completed_on=today. */
+async function handleTaskDone(
+  req: CockpitHttpRequest,
+  taskId: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const existing = await getTaskById(ctx, taskId);
+  if (!existing) return badRequest(`task "${taskId}" not found`);
+  const today = new Date().toISOString().slice(0, 10);
+  const updated = normalizeTaskInput(
+    { ...existing, done: true, completed_on: today },
+    existing,
+  );
+  await upsertTask(ctx, updated);
+  return jsonResponse(200, { ok: true, task: updated });
+}
+
+/** POST /api/tasks/:id/feedback — body { author, text } appends to feedback[]. */
+async function handleTaskFeedback(
+  req: CockpitHttpRequest,
+  taskId: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const author = typeof body.author === 'string' ? body.author : '';
+  const text = typeof body.text === 'string' ? body.text : '';
+  if (!author) return badRequest('missing string "author"');
+  if (!text) return badRequest('missing string "text"');
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const existing = await getTaskById(ctx, taskId);
+  if (!existing) return badRequest(`task "${taskId}" not found`);
+  const ts = new Date().toISOString();
+  const fb: TaskFeedback = { author, ts, text };
+  const updated = normalizeTaskInput(
+    { ...existing, feedback: [...existing.feedback, fb] },
+    existing,
+  );
+  await upsertTask(ctx, updated);
+  return jsonResponse(200, { ok: true, task: updated });
+}
+
+/** POST /api/tasks/:id/escalate — body { to, reason }; appends + updates owner. */
+async function handleTaskEscalate(
+  req: CockpitHttpRequest,
+  taskId: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const to = typeof body.to === 'string' ? (body.to as TaskOwner) : null;
+  const reason = typeof body.reason === 'string' ? body.reason : '';
+  if (!to || !VALID_TASK_OWNERS.includes(to)) {
+    return badRequest(`invalid "to" (must be one of: ${VALID_TASK_OWNERS.join(', ')})`);
+  }
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const existing = await getTaskById(ctx, taskId);
+  if (!existing) return badRequest(`task "${taskId}" not found`);
+  const ts = new Date().toISOString();
+  const esc: TaskEscalation = { from: existing.owner, to, ts, reason };
+  const updated = normalizeTaskInput(
+    { ...existing, owner: to, escalations: [...existing.escalations, esc] },
+    existing,
+  );
+  await upsertTask(ctx, updated);
+  return jsonResponse(200, { ok: true, task: updated });
+}
+
+/** GET /api/tasks/snapshot — bridge reads canonical state for reconcile. */
+async function handleTasksSnapshotGet(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const tasks = await getTasks(ctx);
+  return jsonResponse(200, { ok: true, tasks });
+}
+
+/** PUT /api/tasks/snapshot — bridge writes merged state back. */
+async function handleTasksSnapshotPut(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(body.tasks)) {
+    return badRequest('missing array "tasks"');
+  }
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const incoming = (body.tasks as Partial<Task>[]).map((t) => normalizeTaskInput(t));
+  // Bridge has already applied last-write-wins; trust its merged output but
+  // preserve our updated_at if the bridge sent the same value back (avoids
+  // bouncing timestamps forward on every reconcile).
+  const existing = await getTasks(ctx);
+  const existingMap = new Map(existing.map((t) => [t.id, t]));
+  const finalTasks = incoming.map((t) => {
+    const prev = existingMap.get(t.id);
+    if (
+      prev &&
+      prev.updated_at &&
+      // If the new task is the same as the previous one (modulo updated_at),
+      // keep the previous timestamp to prevent reconcile loops.
+      JSON.stringify({ ...prev, updated_at: '' }) ===
+        JSON.stringify({ ...t, updated_at: '' })
+    ) {
+      return { ...t, updated_at: prev.updated_at };
+    }
+    return t;
+  });
+  await setTasks(ctx, finalTasks);
+  return jsonResponse(200, { ok: true, count: finalTasks.length });
+}
+
+/** Match `/api/tasks/:id` (PATCH). */
+function matchTaskId(p: string): string | null {
+  const prefix = '/api/tasks/';
+  if (!p.startsWith(prefix)) return null;
+  const rest = p.slice(prefix.length);
+  if (!rest || rest.includes('/')) return null;
+  // Reserve special paths
+  if (rest === 'snapshot' || rest === 'all') return null;
+  return decodeURIComponent(rest);
+}
+
+/** Match `/api/tasks/:id/done`, `/api/tasks/:id/feedback`, `/api/tasks/:id/escalate`. */
+function matchTaskAction(p: string): { id: string; action: string } | null {
+  const prefix = '/api/tasks/';
+  if (!p.startsWith(prefix)) return null;
+  const rest = p.slice(prefix.length);
+  const parts = rest.split('/');
+  if (parts.length !== 2) return null;
+  const [id, action] = parts;
+  if (!id || !action) return null;
+  if (!['done', 'feedback', 'escalate'].includes(action)) return null;
+  return { id: decodeURIComponent(id), action };
+}
+
 /**
  * GET /api/feedback/pending
  * Returns unresolved feedback_requests.
@@ -1151,6 +1410,37 @@ const STATIC_ROUTES: CockpitRoute[] = [
     description: 'Bridge heartbeat: posts diagnostic snapshot (admin)',
     handler: handleVaultStatusPost,
   },
+  // Task endpoints (Phase 3)
+  {
+    method: 'GET',
+    path: '/api/tasks',
+    description: 'List active (not-done) tasks (admin)',
+    handler: handleTasksList,
+  },
+  {
+    method: 'POST',
+    path: '/api/tasks',
+    description: 'Create a new task (admin)',
+    handler: handleTaskCreate,
+  },
+  {
+    method: 'GET',
+    path: '/api/tasks/all',
+    description: 'List all tasks including done (admin)',
+    handler: handleTasksAll,
+  },
+  {
+    method: 'GET',
+    path: '/api/tasks/snapshot',
+    description: 'Bridge: read canonical task snapshot (admin)',
+    handler: handleTasksSnapshotGet,
+  },
+  {
+    method: 'PUT',
+    path: '/api/tasks/snapshot',
+    description: 'Bridge: write merged task snapshot (admin)',
+    handler: handleTasksSnapshotPut,
+  },
   // Feedback endpoints
   {
     method: 'POST',
@@ -1301,6 +1591,24 @@ async function dispatch(req: CockpitHttpRequest): Promise<CockpitHttpResponse> {
   if (vaultResultId !== null) {
     if (req.method !== 'POST') return methodNotAllowed();
     return await handleVaultJobResult(req, vaultResultId);
+  }
+
+  // Task action: /api/tasks/:id/{done,feedback,escalate} dynamic routes.
+  const taskAction = matchTaskAction(req.path);
+  if (taskAction !== null) {
+    if (req.method !== 'POST') return methodNotAllowed();
+    if (taskAction.action === 'done') return await handleTaskDone(req, taskAction.id);
+    if (taskAction.action === 'feedback')
+      return await handleTaskFeedback(req, taskAction.id);
+    if (taskAction.action === 'escalate')
+      return await handleTaskEscalate(req, taskAction.id);
+  }
+
+  // Task PATCH: /api/tasks/:id
+  const taskId = matchTaskId(req.path);
+  if (taskId !== null) {
+    if (req.method !== 'PATCH') return methodNotAllowed();
+    return await handleTaskPatch(req, taskId);
   }
 
   // State store: /api/state/:key dynamic routes.

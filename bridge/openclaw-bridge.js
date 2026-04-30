@@ -30,6 +30,7 @@
 
 import fetch from 'node-fetch';
 import * as vault from './vault.js';
+import { startTaskWatcher, startTaskPoller } from './task-sync.js';
 
 /* ─────────────── Config ─────────────── */
 
@@ -104,6 +105,19 @@ async function cockpitPost(path, body) {
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Cockpit POST ${path} → HTTP ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+async function cockpitPut(path, body) {
+  const res = await fetch(`${COCKPIT_BACKEND_URL}${path}`, {
+    method: 'PUT',
+    headers: cockpitHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Cockpit PUT ${path} → HTTP ${res.status}: ${text}`);
   }
   return res.json();
 }
@@ -684,6 +698,11 @@ if (vault.isEnabled()) {
   announceVaultStatus();
   pollVaultJobs();
   setInterval(pollVaultJobs, VAULT_POLL_INTERVAL_MS);
+
+  // Phase 3: task reconciler — vault Tasks/Active.md ↔ server cache.
+  const taskClient = { get: cockpitGet, put: cockpitPut };
+  startTaskWatcher(taskClient);
+  startTaskPoller(taskClient);
 } else {
   log('info', 'vault disabled (set COCKPIT_VAULT_PATH to enable)');
 }

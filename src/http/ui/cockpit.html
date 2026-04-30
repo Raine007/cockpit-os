@@ -654,6 +654,14 @@ img,svg{display:block;max-width:100%;}
 .task-chip-text{flex:1;font-size:var(--text-sm);color:var(--text);line-height:1.4;}
 .task-chip-cat{font-size:.62rem;color:var(--text-3);margin-top:2px;}
 
+/* Phase 3: owner badges + escalation chip on tasks */
+.owner-badge{display:inline-block;font-size:.55rem;font-weight:700;letter-spacing:.06em;padding:1px 5px;border-radius:4px;margin-left:4px;vertical-align:middle;border:1px solid currentColor;}
+.owner-openclaw{color:#60a5fa;}
+.owner-claude{color:#c084fc;}
+.owner-perplexity{color:#5eead4;}
+.owner-raine{color:#fbbf24;}
+.esc-chip{display:inline-block;font-size:.55rem;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:4px;vertical-align:middle;color:#f87171;border:1px solid #f87171;cursor:help;}
+
 /* ── DISCIPLINE ── */
 .score-hero{text-align:center;padding:var(--s6) 0 var(--s5);}
 .score-num{font-family:'DM Mono',monospace;font-size:5rem;font-weight:700;line-height:1;letter-spacing:-.05em;color:var(--text);}
@@ -1497,53 +1505,98 @@ function fmtMoney(n){return'$'+Number(n).toLocaleString('en-US',{minimumFraction
 
 // ── REAL GOOGLE TASKS — pulled live Apr 26 2026 ──
 // IDs match real Google Tasks for future sync
-const GTASKS = [
-  {id:'6gVQ9vGcjR7jc7j4',title:'Post Reel 2 — \'The 40-hour PPL is a myth\'',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'File: reel2_flatbroke_FINAL.mp4 (in Dropbox). Hook: \'The 40-hour PPL is a myth. Real average: 65-70 hours.\' Post to @cockpit.grind 2-3 days after Reel 1. Drop linktr.ee/raine07 in bio. Caption short and rough, 3-4 hashtags max. No link in caption.',urgent:true},
-  {id:'6gVQ9vH8hGP3fv64',title:'Reddit post — r/PrivatePilot',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'TITLE: My flight school quoted me 40 hours on purpose  Not saying they\'re evil. But there\'s no way they don\'t know the real number.  FAA minimum is 40 hours. National average is 60-70. Every school I talked to in the Scottsdale area quoted me 40-45 hours and a total cost based on that. Not one of them mentioned the average unprompted.  I\'m at hour 52. No certificate. Training paused because I ran out of money. I did everything right — I studied, I flew consistently for a while, I wasn\'t the student who showed up unprepared. I just budgeted for the number they gave me.  The part that gets me is it\'s not hard information to find. AOPA publishes the average. Every CFI knows it. But quoting the realistic number makes the sticker price scarier and probably loses them students before they even start.  Did your school give you the real number upfront or did you find out the hard way too?',urgent:true},
-  {id:'6gVQ9vHJh2ghh3gW',title:'Reddit post — r/aviation (post 2-3 days after r/PrivatePilot)',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'TITLE: Nobody in the industry talks about how badly the 40-hour PPL myth sets students up on purpose  I know this isn\'t a hot take but I don\'t see it discussed enough from the student side.  18 years old, Scottsdale AZ, started flight training last year with a realistic budget built around what every school quoted me — 40 to 45 hours. Logged 52. Still no certificate. Training is on hold.  The frustrating part isn\'t that it took longer. It\'s that the 60-70 hour average is publicly available data and not a single school, CFI, or intro flight briefing mentioned it to me. You only find out after you\'re already deep in and the money is already spent.  I get why schools do it. Quoting the realistic number upfront is a harder sell. But there are a lot of students who could have planned better and stayed in training if someone just gave them the honest number at the start.  Anyone else go through this or am I the only one who didn\'t get the memo?',urgent:true},
-  {id:'6gVQ9vHR2WVpvFqW',title:'Pick next reel clip and send footage to Computer for editing',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'28 flying clips across two Dropbox folders ready to use. B-roll highlights: \'me stuttering\' (hold attention), \'bastard took the checklist\' (funny/authentic), fire video (cut profanity at start), slow window rollup (cliffhanger). RayBan Meta has 110 untouched clips. Drop a Dropbox link in chat and say which vibe you want — Computer will cut it.',urgent:true},
-  {id:'6gVQ9vGC6CC4GMr4',title:'Post Reel 1 — \'Flight schools told me 40 hours\'',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'File: reel1_40hour_FINAL.mp4 (in Dropbox). Hook: \'Flight schools told me 40 hours. I ran out of money at hour 52.\' Post to @cockpit.grind. Drop linktr.ee/raine07 in bio. Caption short and rough, 3-4 hashtags max. No link in caption.',urgent:true},
-  {id:'6gVQ9vMRM26vWr6W',title:'Reddit post — r/flying (post 4-5 days after r/PrivatePilot)',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'TITLE: Flight training almost broke me financially and I think it was designed to on purpose  Hear me out before you roast me.  I\'m not saying flight schools are scamming anyone. But the 40-hour FAA minimum gets quoted like it\'s the expected outcome when everyone in the industry knows it isn\'t. National average is 60-70 hours. Some students hit 80+. The schools know this. The CFIs know this. The students don\'t — until they\'re already in it.  I hit hour 52 with no certificate and an empty bank account. Had to stop. Built my entire budget around the number I was given, not the number that was true.  What kills me is the fix is so simple. Just tell students upfront: plan for 65 hours minimum, here\'s what that actually costs at our rates, here\'s what you should have in savings before you start. That conversation alone would keep more students in training longer because they\'d actually be prepared.  Instead the industry loses students mid-certificate because they run out of money that they would have had if anyone had been straight with them.  Am I wrong or does this happen more than people admit?',urgent:true},
-  {id:'6gVQ9vP9QpM9RFrW',title:'[AI SUGGESTION] DM 20 student pilot accounts on Instagram with a personalized pitch for the ebook',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:20,notes:'You have zero sales because zero people know the ebook exists — subreddits and Quora are long-game plays, but a direct DM to someone actively searching for PPL cost info converts TODAY. Student pilots on Instagram are the exact buyer: they\'re anxious about money, they\'re young, and $13 is nothing if it saves them a surprise.  How to do it: 1. Search Instagram for hashtags: #studentpilot #ppltraining #learntofly #flighttraining — filter to posts from the last 7 days. 2. Find 20 accounts that posted about starting lessons or stressing about cost. Look for bios that say \'student pilot\' or posts like \'just started flying.\' 3. Send this DM (copy-paste, tweak name): \'Hey [name] — just saw your post about [flight training]. I\'m also a student pilot and just finished writing a $13 ebook breaking down every real cost of the PPL nobody tells you about — discovery flights, checkride fees, all of it. Thought it might actually help you budget. Here\'s the link if you\'re curious: [your Gumroad link]. No pressure at all, just pilot-to-pilot.\'  4. Track replies in a notes app. Follow up once after 48 hours if no reply. 5. Your Gumroad link: [Earn your first dollar online with Gumroad](https://gumroad.com) — log in and grab your product\'s direct URL from your dashboard.',urgent:false},
-  {id:'6gVQ9vjfpcV2G2hW',title:'Add sponsored/brand deal section to Cockpit OS (when bigger)',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:20,notes:'Reference reel: https://www.instagram.com/reel/DWwLhCEAtV_/ — Hold this idea for when @cockpit.grind has meaningful reach. Future feature for tracking brand deals or affiliate income inside the dashboard. Flag for 10k+ followers.',urgent:false},
-  {id:'6gVVQXcrVhPfqVj4',title:'[AI SUGGESTION] Revisit Shotstack for reel automation',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:20,notes:'Shotstack lets you build one video template and render variations via API — different hooks, captions, CTAs — without re-editing each reel manually. Not worth the time yet since you are still finding what hooks work. Revisit this when you hit your first viral reel or 10 ebook sales. Free tier (20 min/month) is available at shotstack.io to test when ready.',urgent:false},
-  {id:'6gVh8wR329XcqQvW',title:'Post Reel 6 (Hook reel) to cockpit.grind IG',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:20,notes:'FILE: reel6_REDACTED.mp4 (1080x1920, 28s, N-numbers redacted, Pack B captions burned in)  IG CAPTION: Hour 52. $15,600 in. Still 35 hours from a license.  No loans, no parents paying.  Most people quit at hour 30 — I wrote down how I\'m not.  Link in bio.  #studentpilot #ppl #flighttraining #aviationlife #18andflying #cockpitgrind  AUDIO: Original audio by @emmyyberry (Brain Stew + "girl, girl" voiceover) — start at 0:00 BACKUP AUDIO: "Titanium x Please Me (Slowed)" by TRUE CHAD (high-cortisol → low-cortisol contrast fits the Hour 52 → Link in bio arc)  LINK IN BIO: [The Real Cost of Getting Your PPL — And How to Actually Afford It](https://raine07.gumroad.com/l/xblyti) GOAL: hook + grind anthem, drives saves/shares + ebook tail',urgent:false},
-  {id:'6gVh8wWj5j5c2rcW',title:'Post Reel 1 (Gumroad driver) to cockpit.grind IG',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:20,notes:'FILE: reel1_gumroad_REDACTED.mp4 (576x1024, 28s, N-numbers redacted, Pack A captions burned in)  IG CAPTION: $91,000 to fly. I\'m 18, paying every hour myself.  The flight school won\'t show you the math — fuel, insurance, checkride fees, easy 30% over what they quote.  I wrote down every dollar so you don\'t have to find out the hard way.  Link in bio before you sign anything.  #studentpilot #ppl #aviation #flightschool #cessna #gumroad #cockpitgrind  AUDIO: "april" by ILOVEFLOWERS — soft piano, start at 0:00 (lets the on-screen captions carry the weight) BACKUP AUDIO: "A Good Day Humming" by Mimi Chill Music  LINK IN BIO: [The Real Cost of Getting Your PPL — And How to Actually Afford It](https://raine07.gumroad.com/l/xblyti) GOAL: drive ebook clicks',urgent:false},
-  {id:'6gVjR4m5RqjMpVvW',title:'Reel A — The Receipt Reel (28s, 9:16)',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'VIDEO FILE (Dropbox): https://www.dropbox.com/preview/reel_A_REDACTED.mp4  CAPTION: i have a notebook full of receipts. $15,600 spent. $84,400 to go. no flight school told me this. i wrote down every single dollar. link in bio — $14 to skip my mistakes.  HASHTAGS: #studentpilot #flightschool #ppl #aviation #cockpitgrind #realcost #pilotlife #cessna #avgeek #pilottraining  AUDIO PICK: "Until I Found You (Em Beihold version)" — Stephen Sanchez (slowed remix). Hook timestamp 0:08–0:36. Soft, builds emotion under the receipts reveal.  GUMROAD LINK: [The Real Cost of Getting Your PPL — And How to Actually Afford It](https://raine07.gumroad.com/l/xblyti)  Spec: 1080x1920, 28s, N-numbers redacted.',urgent:true},
-  {id:'6gVjR4p6j3c6vCc4',title:'Reel B — Sunset Approach (28s, 9:16)',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'VIDEO FILE (Dropbox): https://www.dropbox.com/preview/reel_B_REDACTED.mp4  CAPTION: sunset taxi. hour 53. most kids my age are on snapchat. i\'m taxiing a $300/hr airplane. every hour costs $300 of my own money. read how. link in bio.  HASHTAGS: #studentpilot #goldenhour #ppl #cessna #aviation #cockpitgrind #pilotlife #flightschool #avgeek #scottsdale  AUDIO PICK: "Snowfall" — Øneheart x reidenshi. Use 0:15–0:43. Atmospheric, lonely, perfect for the sunset taxi vibes.  GUMROAD LINK: [The Real Cost of Getting Your PPL — And How to Actually Afford It](https://raine07.gumroad.com/l/xblyti)  Spec: 1080x1920, 28s, N-numbers redacted.',urgent:true},
-  {id:'6gVjR4pGWMpc99M4',title:'Reel C — Outside Reel (22s, 9:16)',cat:'content',list:'🎬 Aviation Content & Gumroad',pts:25,notes:'VIDEO FILE (Dropbox): https://www.dropbox.com/preview/reel_C_REDACTED.mp4  CAPTION: everyone sees this. nobody sees the $91,000 bill. i\'m 18 and i track every dollar. most never start. read why. link in bio.  HASHTAGS: #studentpilot #aviation #flightschool #ppl #cockpitgrind #pilotlife #avgeek #cessna #scottsdale #pilottraining  AUDIO PICK: "where\'s my love (sad version)" — SYML. 0:10–0:32. Builds hard into the $91,000 reveal.  GUMROAD LINK: [The Real Cost of Getting Your PPL — And How to Actually Afford It](https://raine07.gumroad.com/l/xblyti)  Spec: 1080x1920, 22s, N-numbers redacted.',urgent:true},
-  {id:'6gVQ9g5Qf93JCvRF',title:'Practice slow flight and power-off stalls',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'Know your Piper Archer V-speeds cold: VS0, VS1, VX, VY. Practice recovery to ACS standards.',urgent:false},
-  {id:'6gVQ9g6JCPFRQ3Vm',title:'Master ground reference maneuvers',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'Rectangular patterns, S-turns across a road, turns around a point. Wind correction must be smooth.',urgent:false},
-  {id:'6gVQ9g6Jm74RvVXF',title:'[AI SUGGESTION] Apply for the AOPA Foundation Flight Training Scholarship (most student pilots never apply)',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'The AOPA Foundation hands out hundreds of thousands of dollars in flight training scholarships every year and the applicant pool is shockingly thin — most student pilots don\'t know these exist outside of the one or two mega-scholarships everyone chases. At 35 hours with a Stage 2 pass and a documented airline-pipeline goal, your story is exactly what these committees fund.  How to do it: 1. Go to [404 Error](https://www.aopa.org/training-and-safety/flight-training/scholarships) — bookmark this page. 2. Create a free AOPA account if you don\'t have one (it\'s free and also gets you access to their aviation community, which is useful for networking toward the Southwest pipeline). 3. The main application window typically opens in the fall — set a calendar alert for September 1 to check and apply immediately when it opens. Early applicants statistically get more attention. 4. Prepare now: write a 1-paragraph personal statement about your aviation journey (35 hrs, drywall business funding it, cockpit.grind brand, Southwest goal). Having this ready means you can submit in 20 minutes when the window opens. 5. Also check NGPA (https://www.ngpa.org/scholarships) and the Organization of Black Aerospace Professionals (https://obap.org) — both offer scholarships open to all student pilots with documented career goals.',urgent:false},
-  {id:'6gVQ9g65MmFHJw6F',title:'Study FAR/AIM — VFR weather minimums & right-of-way rules',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'These come up on the written and oral. Know Class B/C/D/E/G minimums, and right-of-way order by aircraft type.',urgent:false},
-  {id:'6gVQ9g7Fw2p9Cr4F',title:'Apply for AOPA scholarship at aopa.org',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'AOPA scholarship applications open September 1. Go to aopa.org/scholarships immediately when it opens — early applicants get more attention. At 35 hours, Stage 2 passed, self-funding at 18 with a documented airline pipeline goal — this application practically writes itself. Also check NGPA (ngpa.org/scholarships) while you\'re there.',urgent:false},
-  {id:'6gVQ9g7hFC2c3hWF',title:'Practice steep turns until ACS standards',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'Target: 45° bank, maintain altitude ±100ft, airspeed ±10kts, heading rollout ±10°.',urgent:false},
-  {id:'6gVQ9gCJp6pCHC2m',title:'Schedule 2–3 flight lessons this week',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'Budget $165–210 per lesson. Book with your CFI asap — consistency is everything for checkride readiness.',urgent:false},
-  {id:'6gVQ9g8P82VG5FcF',title:'Save $2,000 for checkride costs',cat:'flight',list:'✈️ Pilot Training',pts:5,notes:'Track this separately from your weekly budget. Every week set aside a fixed amount toward it.',urgent:false},
-  {id:'6gVQC69WC74vVxJp',title:'Fix and finalize Google Business Profile videos',cat:'biz-drywall',list:'🏗️ Hustles',pts:5,notes:'Fix the clip order, tighten the edits. These videos are your storefront — make them look professional.',urgent:false},
-  {id:'6gVgj56vg79g4m3p',title:'Distribute Upside referral cards when they arrive',cat:'biz-drywall',list:'🏗️ Hustles',pts:25,notes:'Cards arriving May 4 from Vistaprint. Drop them at gas station pumps, convenience stores, anywhere drivers stop. Passive income — once they\'re out, referrals run on autopilot. Hit at least 3 locations the day they arrive.',urgent:true},
-  {id:'6gVQC69CQ7P58HFp',title:'Add team members to Google Business Profile',cat:'biz-drywall',list:'🏗️ Hustles',pts:5,notes:'Adds credibility and lets others manage the profile if needed.',urgent:false},
-  {id:'6gVQC6MQfjF9W5pp',title:'Get at least 5 new Google reviews',cat:'biz-drywall',list:'🏗️ Hustles',pts:5,notes:'Ask every happy client directly. More reviews = more local search visibility = more jobs.',urgent:false},
-  {id:'6gVQCChqQRC387h7',title:'Get scooter tire quote from EaRide Shop',cat:'personal',list:'🏠 Personal & Life',pts:10,notes:'Replace rear 10-inch tire on girlfriend\'s scooter with solid rubber. Call (480) 930-4416, email support@earideshop.com, or use quote form at earideshop.com',urgent:false},
-  {id:'6gVQCCrmqMJRmM37',title:'Research Southwest Airlines Destination 225° program requirements',cat:'personal',list:'🏠 Personal & Life',pts:10,notes:'You flagged interest in the Southwest pilot pipeline. Destination 225° is their formal cadet pathway — check eligibility requirements, timeline, and what milestones you need to hit first (PPL → instrument → commercial → hours). Go to southwest.com and search Destination 225. This is the long game but knowing the target changes how you train now.',urgent:false},
-  {id:'6gVQCCq7mHFHj8qf',title:'Get better suit shirts when bills are covered',cat:'personal',list:'🏠 Personal & Life',pts:25,notes:'Check whether bills are covered and there is room in the budget for better suit shirts.',urgent:true},
-  {id:'6gVQCCrpcHWp7w4f',title:'🚗 URGENT: Get radiator flushed and air filter replaced',cat:'personal',list:'🏠 Personal & Life',pts:25,notes:'Vehicle maintenance task. Complete within 2 months, by June 26, 2026.',urgent:true},
-  {id:'6gVQCCx2p86xM4Hf',title:'Hang belts on wall',cat:'personal',list:'🏠 Personal & Life',pts:10,notes:'Do this during the day while mom isn\'t sleeping.',urgent:false},
-  {id:'6gVcpH37w4J8jp2f',title:'Apply for Destination 225° Cadet Pathway',cat:'personal',list:'🏠 Personal & Life',pts:25,notes:'This is Southwest Airlines\' cadet pipeline program — exactly what you\'ve been talking about. Application link: https://www.southwest.com/careers/destination-225 — You flagged this as urgent by May 1. Open it, read the requirements, and submit or at minimum create an account and start the application tonight.',urgent:true},
-  {id:'6gVhWqc7G836Pcp7',title:'Interview at Mountainside Fitness — Monday 2:00 PM',cat:'personal',list:'🏠 Personal & Life',pts:25,notes:'Mountainside Fitness on Frank Lloyd Wright & Shea, Scottsdale. Interview with Zac (+1 480-234-0592), referred by Amiah.  Day-of checklist: - Dress sharp, fresh fit, clean shoes - Arrive 5-10 min early - Know your availability cold: weekdays after 2:20pm, most weekends - Lead with reliability and energy — mention you run your own drywall business (shows you\\\'re not lazy) - Don\\\'t undersell yourself on pay — it\\\'s a fitness sales/front desk role, starting is usually $14-17/hr',urgent:true},
-  {id:'6gVhgVxrVcXwGFf7',title:'Reach out to Mr delima TOMORROW',cat:'personal',list:'🏠 Personal & Life',pts:10,notes:'Captured from Quick Notes — turn this into a single concrete physical action.',urgent:false},
-  {id:'6gVQC6Gp8hgj2WHp',title:'Review Roth IRA auto-deposit strategy',cat:'money',list:'📈 Money & Investing',pts:15,notes:'You already have a Roth IRA with $10/week auto-deposits in Robinhood — solid foundation. Consider bumping it to $20-25/week once CC debt is cleared in May. At 18, every dollar compounded is worth the most it will ever be. Also confirm your investments inside the IRA are in a broad index fund (VTI/FSKAX), not just sitting in cash.  [Note from your Personal & Life list: confirmed Roth IRA already exists in Robinhood with $10/week auto-deposits.]',urgent:false},
-  {id:'6gVQC6P8V4hpgg9p',title:'[AI SUGGESTION] Apply for a 0% APR balance transfer card to kill the Gemini CC debt',cat:'money',list:'📈 Money & Investing',pts:25,notes:'At 33.49% APR, your $595 Gemini balance is actively growing every single day — a balance transfer to a 0% intro APR card stops the bleeding immediately and lets every dollar you throw at it count. You have a 705 credit score, which qualifies you for several no-fee or low-fee transfer cards right now.  How to do it: 1. Apply for the Wells Fargo Reflect Card (0% APR for 21 months, no annual fee) or Discover it® Student Card (0% intro APR 6 months) — both are strong fits at 705: https://www.wellsfargo.com/credit-cards/reflect/ and [College Student Credit Cards - No Credit Needed | Discover](https://www.discover.com/credit-cards/student/) 2. Once approved, call and request a balance transfer of the full $595 from your Gemini card. 3. Set a calendar reminder to pay it off before the promo period ends. 4. Cut or freeze your Gemini card — do NOT use it again until it\'s at zero.',urgent:true},
-  {id:'6gVQC6P6PPcc5WPG',title:'Run a momentum stock screen (top 5-day performers, RSI/ROC/MA)',cat:'money',list:'📈 Money & Investing',pts:15,notes:'Use the quant-style analysis we built together — ROC, RSI, moving average crossovers, correlation checks.',urgent:false},
-  {id:'6gVQC6RJ7gWGRVwG',title:'Set up a weekly flying fund transfer',cat:'money',list:'📈 Money & Investing',pts:15,notes:'Even $50–100/week into a separate account earns you 5–6 lessons over time. Automate it so you don\'t think about it.',urgent:false},
-  {id:'6gVQC6Vj5vW7HpFG',title:'Run a value stock screen (large-cap near 52-week lows, low P/E)',cat:'money',list:'📈 Money & Investing',pts:15,notes:'Look for quality names beaten down temporarily, not broken businesses. Check fundamentals before buying.',urgent:false},
-  {id:'6gVQCCfQMPr5jHCj',title:'Apply for Scottsdale Community College',cat:'school',list:'🎓 School & Scholarships',pts:25,notes:'Complete SCC enrollment application. Check scc.edu for next enrollment window and required documents. This is your post-graduation plan — don\'t let the deadline sneak up.',urgent:false},
-  {id:'6gVQCCfXhGVGp94C',title:'Register for SCC classes',cat:'school',list:'🎓 School & Scholarships',pts:25,notes:'Just needs to get done — no blockers. Go to the SCC portal and register.',urgent:false},
-  {id:'6gVQCCggQ832Vw7j',title:'Complete FAFSA for SCC',cat:'school',list:'🎓 School & Scholarships',pts:25,notes:'Need: dad\'s info + tax forms. Sit down with dad and knock this out — it\'s blocking financial aid.',urgent:false},
-  {id:'6gVgVwc5j8MWQRGC',title:'Sign up for NAU 2NAU program — first week at SCC',cat:'school',list:'🎓 School & Scholarships',pts:25,notes:'The single most important move when you enroll at SCC Fall 2026. Go to nau.edu/admissions/2nau-access/ and register. This starts the clock on the $2,000 2NAU Scholarship (need 2 terms enrolled + 45 credits + 3.0 GPA). It also gets you a dedicated NAU advisor while still at community college — free guidance the whole way through. Do this Week 1, not later.',urgent:true},
-  {id:'6gVgVwfjv6mM6mvC',title:'Target All Arizona Academic Team scholarship at SCC (100% NAU tuition)',cat:'school',list:'🎓 School & Scholarships',pts:25,notes:'This is the hidden jackpot almost no one knows about. Apply in October 2027 (Year 2 at SCC) — SCC nominates only 2 students per campus. Win it and NAU tuition is 100% covered for up to 60 credits. Requirements: 3.5+ GPA, 36+ credits completed, active community involvement record. Start building that involvement record now — aviation content, business ownership, and student clubs all count. Contact SCC Student Life office Fall 2027 to apply.',urgent:false},
-  {id:'6gVgVxJ92GXWpFrj',title:'Accept PTK invitation at SCC (unlocks $4,000/yr NAU scholarship)',cat:'school',list:'🎓 School & Scholarships',pts:25,notes:'After your first semester at SCC with a 3.5+ GPA, you\'ll get an invite to Phi Theta Kappa honor society. Accept it — the one-time membership fee is ~$75-100 and it unlocks a $4,000/year NAU transfer scholarship that can stack with other awards. Keep your membership active and bring your PTK card when you transfer. This is easy money if your GPA is there.',urgent:false}
-];
+let GTASKS = []; // populated from /api/tasks/all on load (Phase 3).
+let GTASKS_FULL = []; // unfiltered including done tasks
+let GTASKS_LAST_FETCH = 0;
+
+// Adapter: server Task → dashboard task shape.
+function adaptServerTask(t){
+  const tags = Array.isArray(t.tags) ? t.tags : [];
+  const cat = tags[0] || 'misc';
+  const list = tags[1] ? tags[1].replace(/-/g,' ').replace(/\b\w/g, c=>c.toUpperCase()) : cat.charAt(0).toUpperCase()+cat.slice(1);
+  return {
+    id: t.id,
+    title: t.title || '',
+    cat,
+    list,
+    pts: t.priority === 'high' ? 25 : (t.priority === 'medium-high' ? 20 : 10),
+    urgent: t.priority === 'high',
+    notes: t.notes || '',
+    owner: t.owner || 'openclaw',
+    priority: t.priority || null,
+    due: t.due || null,
+    done: !!t.done,
+    feedback: Array.isArray(t.feedback) ? t.feedback : [],
+    escalations: Array.isArray(t.escalations) ? t.escalations : [],
+    artifacts: Array.isArray(t.artifacts) ? t.artifacts : [],
+    updated_at: t.updated_at || null,
+  };
+}
+
+async function loadTasksFromAPI(){
+  try{
+    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    if(!tok) return false;
+    const res = await fetch('/api/tasks/all', { headers:{ 'Authorization': 'Bearer '+tok } });
+    if(!res.ok){ console.warn('loadTasks: HTTP', res.status); return false; }
+    const data = await res.json();
+    const list = (data && Array.isArray(data.tasks)) ? data.tasks : [];
+    GTASKS_FULL = list.map(adaptServerTask);
+    GTASKS = GTASKS_FULL.filter(t=>!t.done);
+    GTASKS_LAST_FETCH = Date.now();
+    if(typeof renderToday === 'function') renderToday();
+    if(typeof renderContent === 'function') renderContent();
+    if(typeof renderDiscipline === 'function') renderDiscipline();
+    return true;
+  } catch(e){
+    console.warn('loadTasks failed:', e && e.message);
+    return false;
+  }
+}
+
+async function postTaskDone(taskId){
+  try{
+    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    if(!tok) return false;
+    const today = todayKey();
+    await fetch('/api/tasks/'+encodeURIComponent(taskId)+'/done', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':'application/json' },
+      body: JSON.stringify({ completed_on: today }),
+    });
+    return true;
+  } catch(_){ return false; }
+}
+
+async function postTaskFeedback(taskId, text){
+  if(!text || !text.trim()) return false;
+  try{
+    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    if(!tok) return false;
+    const res = await fetch('/api/tasks/'+encodeURIComponent(taskId)+'/feedback', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':'application/json' },
+      body: JSON.stringify({ author: 'raine', text: text.trim() }),
+    });
+    if(res.ok){ loadTasksFromAPI(); return true; }
+    return false;
+  } catch(_){ return false; }
+}
+
+function ownerBadge(owner){
+  if(!owner || owner === 'openclaw') return '<span class="owner-badge owner-openclaw" title="Owned by OpenClaw (local)">OC</span>';
+  if(owner === 'claude') return '<span class="owner-badge owner-claude" title="Owned by Claude (escalated)">CL</span>';
+  if(owner === 'perplexity') return '<span class="owner-badge owner-perplexity" title="Owned by Perplexity (escalated to me)">PX</span>';
+  if(owner === 'raine') return '<span class="owner-badge owner-raine" title="Owned by Raine (manual)">YOU</span>';
+  return '<span class="owner-badge">'+owner.slice(0,2).toUpperCase()+'</span>';
+}
+
+function escalationTooltip(esc){
+  if(!Array.isArray(esc) || esc.length === 0) return '';
+  const chain = esc.map(e=>(e.from||'?')+'→'+(e.to||'?')).join(', ');
+  return ' <span class="esc-chip" title="'+chain.replace(/"/g,'&quot;')+'">↗ '+esc.length+'</span>';
+}
+
 
 
 // Smart daily task selection — deterministic per day, stable all day
@@ -2064,7 +2117,7 @@ function renderToday(){
         ${done[t.id]?'✓':''}
       </div>
       <div class="task-chip-text">
-        <div style="font-weight:600;">${t.title}</div>
+        <div style="font-weight:600;">${t.title} ${ownerBadge(t.owner)}${escalationTooltip(t.escalations)}</div>
         <div class="task-chip-cat">${t.list}</div>
       </div>
     </div>`).join('');
@@ -2100,6 +2153,8 @@ function toggleTask(id,el){
   if(completing){
     const fbInput=document.getElementById('fb-input-'+id);
     if(fbInput&&fbInput.value.trim()) saveFeedback(id,fbInput.value.trim());
+    // Phase 3: also push done to the vault. Best-effort, non-blocking.
+    if(typeof postTaskDone === 'function') postTaskDone(id);
   }
   done[id]=completing;
   ss('tasks_done_'+today,done);
@@ -2400,6 +2455,8 @@ function saveFeedback(id, text){
   existing.unshift(entry);
   const trimmed = existing.slice(0, 10); // keep last 10 entries
   ss(key, trimmed);
+  // Phase 3: also push feedback to the vault.
+  if(typeof postTaskFeedback === 'function') postTaskFeedback(id, text.trim());
   // Push to Firebase
   const uid = localStorage.getItem('_cockpit_uid');
   if(uid && window._fbDB){
@@ -2762,7 +2819,7 @@ function renderContentTaskList(){
     return`<div class="task-chip ${isUrgent?'urgent-chip':''}" id="ctchip-${t.id}" style="${isUrgent?'border-color:var(--crimson);':''}" onclick="openTaskPanel('${t.id}')">
       <div class="task-chip-check ${isDone?'done':''}" onclick="event.stopPropagation();toggleTask('${t.id}',this)">${isDone?'✓':''}</div>
       <div class="task-chip-text">
-        <div style="font-weight:600;font-size:.75rem;${isUrgent?'color:var(--crimson);':''}">${t.title.replace(/\[AI SUGGESTION\] /,'<span style="font-size:.58rem;color:var(--blue);font-weight:700;letter-spacing:.08em;margin-right:4px;">AI</span>')}</div>
+        <div style="font-weight:600;font-size:.75rem;${isUrgent?'color:var(--crimson);':''}">${t.title.replace(/\[AI SUGGESTION\] /,'<span style="font-size:.58rem;color:var(--blue);font-weight:700;letter-spacing:.08em;margin-right:4px;">AI</span>')} ${ownerBadge(t.owner)}${escalationTooltip(t.escalations)}</div>
         <div class="task-chip-cat">${t.list}</div>
       </div>
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;color:var(--text-3);"><polyline points="9 18 15 12 9 6"/></svg>
@@ -2916,123 +2973,13 @@ function buildFactors(){
 }
 
 // Real Todoist tasks (snapshot — refreshed by Computer)
-const TODOIST_TASKS = [
-  {id:'6gVcpH37w4J8jp2f',content:"Apply for Destination 225° Cadet Pathway",priority:4,due:'2026-05-01',project:'Personal',labels:['flight'],steps:[
-    'Go to swacareers.southwestair.com and search Destination 225 Cadet',
-    'Create or sign in to your candidate profile',
-    'Read full eligibility list (PPL minimum, school accreditation, age, GPA)',
-    'Upload resume + transcripts + any flight hours documentation',
-    'Answer the short-answer prompts in your own voice — no AI tone',
-    'Submit before midnight CT on May 1, screenshot the confirmation'
-  ]},
-  {id:'6gVhWqc7G836Pcp7',content:"Interview at Mountainside Fitness — Mon 2:00 PM",priority:4,due:'2026-05-04',project:'Personal',labels:[],steps:[
-    'Address: Frank Lloyd Wright & Shea, Scottsdale',
-    'Interviewer: Zac · (480) 234-0592',
-    'Iron the suit Sunday night, polish dress shoes',
-    'Print 2 copies of resume, bring a pen and notepad',
-    'Leave 30 min early — arrive 5–10 min before 2:00 PM',
-    'Prep 3 stories: hardest workout you led, conflict with a member, why fitness',
-    'Have 2 questions ready about ramp/path to PT or manager'
-  ]},
-  {id:'6gVV2WRJhqc3xQwP',content:"URGENT: Send Reel Insights to Computer",priority:4,due:'2026-04-28',project:'Inbox',labels:[],steps:[
-    'Open Instagram → marshmallow Reel → View Insights',
-    'Screenshot: views, reach, likes, comments, shares, saves',
-    'Tap retention graph and screenshot that too',
-    'Drop the screenshots in this chat — OpenClaw will route to me'
-  ]},
-  {id:'6gVVgQmr4Pr6hM4w',content:"Review website for Stay Classy LLC on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Business'],steps:[
-    'Open dashboard.stripe.com/settings/business',
-    'Confirm business name, address, support email match the live site',
-    'Click Update website → paste the public URL Stripe will see',
-    'Save and watch for any red banner about additional info needed'
-  ]},
-  {id:'6gVVgRPvgmmpxPqP',content:"Re-enable 2-step auth on Stripe",priority:4,due:'2026-04-28',project:'Inbox',labels:['Security'],steps:[
-    'Open dashboard.stripe.com/settings/user',
-    'If you did NOT turn 2FA off Apr 26 → reset password first',
-    'Two-step auth → Enable → choose Authenticator App (not SMS)',
-    'Scan the QR with Authy or Google Authenticator',
-    'Save the backup codes in 1Password / a notes file you control'
-  ]},
-  {id:'6gVjfjxWFG3FV3jP',content:"Schedule Queen Creek PBR Reel REPOST — 6:30 PM MST",priority:4,due:'2026-04-29',project:'Inbox',labels:['instagram','reel-queue'],steps:[
-    'Open the recut version (no music, native audio only)',
-    'Verify the rider was not injured in this run before posting',
-    'Caption ready in @raine_PBR_caption file',
-    'Use Meta Business Suite → Schedule → 6:30 PM MST',
-    'Confirm scheduled, then close — do not edit again'
-  ]},
-  {id:'6gVqVcx4Jj87hRG7',content:"Submit English Project",priority:3,due:'2026-05-03',project:'Personal',labels:[],steps:[
-    'You work May 1 4–9:30pm and May 3 3–9:30pm — finish by May 2',
-    'Re-read the rubric, highlight every required element',
-    'Block 90 min Friday morning, 90 min Saturday morning',
-    'Read aloud once for flow before submitting',
-    'Upload to Canvas, screenshot the submission receipt'
-  ]},
-  {id:'6gVVgW63vvhVpvGP',content:"Check FAFSA 2026–27 results",priority:3,due:'2026-05-01',project:'Inbox',labels:['School'],steps:[
-    'Sign in at studentaid.gov',
-    'My Activity → 2026–27 FAFSA Form',
-    'If processed: download SAR, note your SAI',
-    'Forward results to Maricopa financial aid office if needed'
-  ]},
-  {id:'6gVVqjg89HWrXc9P',content:"Post Queen Creek PBR Reel (bull riding)",priority:3,due:'2026-04-29',project:'Inbox',labels:['instagram','rodeo'],steps:[
-    'Top window: Tue 6:30–8:30 PM MST',
-    'Pick the best of the 2 audio options — native usually wins',
-    'Caption + hashtags already drafted in Content tab',
-    'Post, then engage on 5 rodeo accounts in the next 30 min'
-  ]},
-  {id:'6gVVgWpfmcHjpggP',content:"Verify Maricopa CC password reset",priority:3,due:'2026-04-28',project:'Inbox',labels:['School','Security'],steps:[
-    'If you did the reset → ignore, mark done',
-    'If not you → call Maricopa IT: 480-731-8632',
-    'Account: GRA2172595@maricopa.edu',
-    'After confirming, set a new strong password and add 2FA'
-  ]},
-  {id:'6gVQCCq7mHFHj8qf',content:"Get better suit shirts when bills are covered",priority:3,due:'2026-05-03',project:'Personal',labels:['money'],steps:[
-    'Check Money tab — bills paid this cycle?',
-    'Budget cap: $80 total for 2 shirts',
-    'White + light blue, slim fit, non-iron',
-    'Try Charles Tyrwhitt sale or Macy\'s clearance first'
-  ]},
-  {id:'6gVQCCrmqMJRmM37',content:"Research Southwest Destination 225° requirements",priority:3,due:null,project:'Personal',labels:['flight'],steps:[
-    'Read the official Destination 225° page top to bottom',
-    'Note the 4 pathway tracks and pick the one that fits',
-    'Map: PPL → instrument → commercial → CFI → hours',
-    'Write your own 24-month plan in Flight tab'
-  ]},
-  {id:'6gVVhWX8mwFVwpfw',content:"Bulk-delete email trash piles in Gmail (~60)",priority:2,due:'2026-04-29',project:'Inbox',labels:[],steps:[
-    'Search: category:promotions older_than:30d → Select all → Delete',
-    'Search: from:(noreply OR no-reply) older_than:14d → Delete',
-    'Empty Trash to actually free space',
-    '~60 messages, under 2 minutes total'
-  ]},
-  {id:'6gVVgXWVP2wGwm4w',content:"Confirm 4 recent Dropbox sign-ins",priority:2,due:'2026-04-28',project:'Inbox',labels:['Security'],steps:[
-    'Open dropbox.com/account/security',
-    'Review the 4 sessions from Apr 24–27',
-    'Sign out any device or location you don\'t recognize',
-    'Enable 2FA if not already on'
-  ]},
-  {id:'6gVQCCrpcHWp7w4f',content:"🚗 Get radiator flushed and air filter replaced",priority:2,due:'2026-06-26',project:'Personal',labels:['errand'],steps:[
-    'Get a quote from 2 local shops (Brakes Plus, Big O)',
-    'Coolant flush typically $90–130, cabin filter $30–50',
-    'Schedule a Saturday morning slot',
-    'Keep the receipt for maintenance log'
-  ]},
-  {id:'6gVQCChqQRC387h7',content:"Get scooter tire quote from EaRide Shop",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],steps:[
-    'Call (480) 930-4416 or use earideshop.com quote form',
-    'Spec: solid rubber rear, 10-inch',
-    'Ask install price too — DIY may not be worth it'
-  ]},
-  {id:'6gVQCCx2p86xM4Hf',content:"Hang belts on wall",priority:1,due:null,project:'Personal',labels:['errand','quick-win'],steps:[
-    'Do during the day while mom isn\'t sleeping',
-    'Use 2 small command hooks per belt rack',
-    '15-minute job, no excuses'
-  ]},
-  {id:'6gVhgVxrVcXwGFf7',content:"Reach out to Mr Delima TOMORROW",priority:1,due:null,project:'Personal',labels:[],steps:[
-    'Pick the channel: text, email, or in-person at school',
-    'One-sentence ask — what specifically do you need from him?',
-    'Send before noon — don\'t let it slide another day'
-  ]}
-];
+// Phase 3: Todoist abandoned. TODOIST_TASKS now aliases vault-backed GTASKS_FULL via a
+// global getter so the existing Todoist tab UI keeps working without modification.
+Object.defineProperty(globalThis, 'TODOIST_TASKS', { get(){ return Array.isArray(GTASKS_FULL) ? GTASKS_FULL : []; }, configurable: true });
 
 function _todoistDayBucket(t){
+  // Phase 3 vault tasks may have no due date — fall through to 'No date'.
+  if(!t || !t.due) return '4';
   // returns a sortable string: 0=overdue, 1=today, 2=this-week, 3=later, 4=no-date
   if(!t.due) return '4';
   const today=todayKey();
@@ -3047,7 +2994,11 @@ function _todoistDayBucket(t){
 function _todoistDoneMap(){ return ls('todoist_done',{}); }
 let _todoistOpen = {};
 function toggleTodoistTask(id){
-  const m=_todoistDoneMap(); m[id]=!m[id]; ss('todoist_done',m); renderDiscipline();
+  const m=_todoistDoneMap();
+  const completing = !m[id];
+  m[id]=!m[id]; ss('todoist_done',m); renderDiscipline();
+  // Phase 3: also push done to the vault so it gets archived to Done.md.
+  if(completing && typeof postTaskDone === 'function') postTaskDone(id);
 }
 function toggleTodoistOpen(id){
   _todoistOpen[id] = !_todoistOpen[id];
@@ -3065,18 +3016,24 @@ async function sendTaskFeedback(taskId){
   if(!ta) return;
   const text=(ta.value||'').trim();
   if(!text){ toast('Type something first'); return; }
-  const task = TODOIST_TASKS.find(x=>x.id===taskId);
+  // Phase 3: tasks come from the vault. Adapt shape — title/tags instead of content/project.
+  const task = (TODOIST_TASKS||[]).find(x=>x.id===taskId);
   if(!task){ toast('Task not found'); return; }
   const token = localStorage.getItem('_cockpit_admin_token')||'';
   if(!token){ toast('⚠ Not authenticated'); return; }
-  // Build prefixed message so OpenClaw knows context
-  const msg = `[task: ${task.content}] ${text}`;
+  // Push the feedback to the vault first so it's preserved as a permanent record.
+  if(typeof postTaskFeedback === 'function') postTaskFeedback(taskId, text);
+  // Build prefixed message so OpenClaw knows context.
+  const taskTitle = task.title || task.content || '';
+  const msg = `[task: ${taskTitle}] ${text}`;
   const tab_context = {
     task_id: task.id,
-    task_content: task.content,
+    task_content: taskTitle,
     task_priority: task.priority,
     task_due: task.due,
-    task_project: task.project,
+    task_project: (task.tags && task.tags[0]) || task.cat || task.project,
+    task_owner: task.owner,
+    task_escalations: task.escalations || [],
     task_steps: task.steps || [],
     user_note: text
   };
@@ -3104,9 +3061,20 @@ async function sendTaskFeedback(taskId){
 
 function renderDiscipline(){
   const doneMap=_todoistDoneMap();
+  // Phase 3: tasks now come from the vault. Adapt fields on the fly.
+  // Numeric priority: high→4, medium-high→3, medium→2, low→1, default 2.
+  const prioNum=(t)=>{
+    if(typeof t.priority==='number') return t.priority;
+    if(t.priority==='high') return 4;
+    if(t.priority==='medium-high') return 3;
+    if(t.priority==='low') return 1;
+    if(t.urgent) return 4;
+    return 2;
+  };
   // Sort: priority desc, then by date bucket, then by due asc
-  const sorted=[...TODOIST_TASKS].sort((a,b)=>{
-    if(b.priority!==a.priority) return b.priority-a.priority;
+  const sorted=[...TODOIST_TASKS].filter(t=>!t.done).sort((a,b)=>{
+    const pa=prioNum(a), pb=prioNum(b);
+    if(pb!==pa) return pb-pa;
     const ba=_todoistDayBucket(a), bb=_todoistDayBucket(b);
     if(ba!==bb) return ba.localeCompare(bb);
     return (a.due||'9999').localeCompare(b.due||'9999');
@@ -3114,8 +3082,8 @@ function renderDiscipline(){
 
   // Score: each P4 = 25pts, P3 = 15, P2 = 10, P1 = 5
   const ptsFor=(p)=>p===4?25:p===3?15:p===2?10:5;
-  const total=sorted.reduce((s,t)=>s+ptsFor(t.priority),0);
-  const score=sorted.reduce((s,t)=>s+(doneMap[t.id]?ptsFor(t.priority):0),0);
+  const total=sorted.reduce((s,t)=>s+ptsFor(prioNum(t)),0);
+  const score=sorted.reduce((s,t)=>s+(doneMap[t.id]?ptsFor(prioNum(t)):0),0);
   const pct=total?Math.round(score/total*100):0;
 
   const scoreEl=document.getElementById('disc-score');
@@ -3145,8 +3113,10 @@ function renderDiscipline(){
       const isDone=!!doneMap[t.id];
       const isOpen=!!_todoistOpen[t.id];
       const dueStr=t.due?new Date(t.due+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
-      const pBadge=t.priority===4?'<span class="pill pill-crimson" style="font-size:0.55rem;">P1</span>':t.priority===3?'<span class="pill" style="font-size:0.55rem;background:var(--amber-dim,#3a2a10);color:var(--amber);">P2</span>':'';
-      const labelChips=(t.labels||[]).slice(0,2).map(l=>`<span style="font-size:0.55rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">#${l}</span>`).join(' ');
+      const pn=prioNum(t);
+      const pBadge=pn===4?'<span class="pill pill-crimson" style="font-size:0.55rem;">P1</span>':pn===3?'<span class="pill" style="font-size:0.55rem;background:var(--amber-dim,#3a2a10);color:var(--amber);">P2</span>':'';
+      const tagSrc = (t.labels && t.labels.length) ? t.labels : (t.tags || []);
+      const labelChips=tagSrc.slice(0,2).map(l=>`<span style="font-size:0.55rem;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">#${l}</span>`).join(' ');
       const stepsHtml=(t.steps||[]).map((s,i)=>`<li style="margin:4px 0;color:var(--text-2);font-size:var(--text-xs);line-height:1.5;"><span style="color:var(--blue);font-weight:700;margin-right:6px;">${i+1}.</span>${s}</li>`).join('');
       const expanded = isOpen ? `<div class="task-expand" style="margin-top:var(--s3);padding-top:var(--s3);border-top:1px dashed var(--border);">
           ${stepsHtml ? `<div style="font-size:0.6rem;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Steps</div><ol style="margin:0 0 var(--s3) 0;padding-left:0;list-style:none;">${stepsHtml}</ol>` : ''}
@@ -3162,11 +3132,12 @@ function renderDiscipline(){
           <div class="task-chip-text" style="flex:1;">
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
               ${pBadge}
-              <span style="font-weight:600;${isDone?'text-decoration:line-through':''}">${t.content}</span>
+              <span style="font-weight:600;${isDone?'text-decoration:line-through':''}">${t.title || t.content || ''}</span>
+              ${ownerBadge(t.owner)}${escalationTooltip(t.escalations)}
               <span style="margin-left:auto;color:var(--text-3);font-size:0.7rem;transition:transform .15s;display:inline-block;${isOpen?'transform:rotate(180deg);':''}">▾</span>
             </div>
             <div style="display:flex;gap:8px;margin-top:4px;align-items:center;">
-              <span style="font-size:0.6rem;color:var(--text-3);">${t.project}${dueStr?' · '+dueStr:''}</span>
+              <span style="font-size:0.6rem;color:var(--text-3);">${t.project || t.list || ''}${dueStr?' · '+dueStr:''}</span>
               ${labelChips}
             </div>
           </div>
@@ -3391,6 +3362,12 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderInvestments();
   // Fetch live prices async — updates UI when done
   fetchLivePrices();
+  // Phase 3: pull tasks from the vault (server-side cache) and refresh
+  // every 30s so changes from Obsidian show up without a page reload.
+  if(typeof loadTasksFromAPI === 'function'){
+    loadTasksFromAPI();
+    setInterval(loadTasksFromAPI, 30000);
+  }
   // Refresh schedule every minute (it's now always visible in Today)
   setInterval(()=>{
     const todayView = document.getElementById('view-today');
