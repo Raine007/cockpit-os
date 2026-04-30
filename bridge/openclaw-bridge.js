@@ -157,7 +157,7 @@ function extractText(json) {
 async function tryEndpoint(url, payload, label) {
   // OpenClaw on local Ollama can take 30+ seconds to first-token on cold start.
   const controller = new AbortController();
-  const timeoutMs = parseInt(process.env.OPENCLAW_TIMEOUT_MS || '120000', 10);
+  const timeoutMs = parseInt(process.env.OPENCLAW_TIMEOUT_MS || '300000', 10);
   const t = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
@@ -208,9 +208,10 @@ async function sendToOpenClaw(job) {
     {
       model: process.env.OPENCLAW_MODEL || 'openclaw/main',
       messages: [
-        { role: 'system', content: 'You are OpenClaw, helping Raine via the Cockpit OS chat. Keep replies concise. If the user asks for a video edit (Reels/captions/9:16/blur N-numbers), respond with [ESCALATE] followed by what they asked for. If you need clarification before proceeding, respond with [ASK] followed by your single clarifying question.' },
+        { role: 'system', content: 'You are OpenClaw. Keep replies under 3 sentences. For video edits use [ESCALATE]. For clarifying questions use [ASK].' },
         { role: 'user', content },
       ],
+      max_tokens: 256,
       stream: false,
     },
     '/v1/chat/completions'
