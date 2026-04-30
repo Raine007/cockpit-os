@@ -1,0 +1,63 @@
+[Unit]
+Description=Cockpit OS - OpenClaw Bridge
+# Run after WSL networking is up. Cockpit Cloud Run is remote, so basic
+# network reachability is enough — we don't need a specific peer.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cockpit-os/bridge
+
+# --- Environment ---------------------------------------------------------
+# Cockpit Cloud Run target + admin token. These are the only required vars.
+Environment=COCKPIT_BACKEND_URL=https://cockpit-os-646650189890.us-central1.run.app
+Environment=COCKPIT_ADMIN_TOKEN=bbb5b4b87feb6a4d7cecee7bd6d1e9e3c857e934fccaca3ceb351b0e90f42510
+
+# Local model (Ollama on Windows, reached via the socat tunnel below).
+Environment=BRIDGE_BACKEND=ollama
+Environment=OLLAMA_URL=http://127.0.0.1:11434
+Environment=OLLAMA_MODEL=qwen2.5:7b-instruct
+
+# Operational tuning.
+Environment=BRIDGE_POLL_INTERVAL_MS=3000
+Environment=BRIDGE_HEALTH_CHECK_MS=15000
+Environment=BRIDGE_LOG_LEVEL=info
+Environment=BRIDGE_MAX_TOOL_HOPS=4
+
+# --- Pre-start: ensure the Windows-side Ollama is reachable on 127.0.0.1 -
+# socat forwards localhost:11434 inside WSL to the Windows host's Ollama.
+# Idempotent: only starts a new socat if none is already running.
+ExecStartPre=/bin/bash -lc '\
+  if ! pgrep -f "socat .*TCP-LISTEN:11434" >/dev/null; then \
+    WIN_IP=$(ip route show default | awk "/default/ {print \$3; exit}"); \
+    if [ -n "$WIN_IP" ]; then \
+      nohup socat TCP-LISTEN:11434,fork,reuseaddr TCP:$WIN_IP:11434 \
+        > /tmp/socat-ollama.log 2>&1 & \
+    fi; \
+  fi; \
+  exit 0'
+
+# --- Main process --------------------------------------------------------
+ExecStart=/bin/bash -lc 'exec node %h/cockpit-os/bridge/openclaw-bridge.js'
+
+# --- Resilience ----------------------------------------------------------
+# Always restart, even on success exit (defensive).
+Restart=always
+RestartSec=5
+# Allow many restarts during long outages (e.g. PC sleep, network flap).
+StartLimitIntervalSec=600
+StartLimitBurst=20
+
+# Don't let a stuck process linger forever.
+TimeoutStartSec=30
+TimeoutStopSec=15
+KillMode=mixed
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cockpit-bridge
+
+[Install]
+WantedBy=default.target

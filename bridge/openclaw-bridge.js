@@ -43,6 +43,12 @@ const POLL_INTERVAL_MS = parseInt(process.env.BRIDGE_POLL_INTERVAL_MS || '3000',
 const LOG_LEVEL = process.env.BRIDGE_LOG_LEVEL || 'info';
 const MAX_TOOL_HOPS = parseInt(process.env.BRIDGE_MAX_TOOL_HOPS || '4', 10);
 const MODEL_TIMEOUT_MS = parseInt(process.env.OPENCLAW_TIMEOUT_MS || '120000', 10);
+const HEALTH_CHECK_INTERVAL_MS = parseInt(process.env.BRIDGE_HEALTH_CHECK_MS || '15000', 10);
+
+// Backend health state — when unhealthy, jobs wait instead of failing loudly.
+let _backendHealthy = true;
+let _lastHealthCheckMs = 0;
+let _lastHealthError = '';
 
 /* ─────────────── Validation ─────────────── */
 
@@ -294,6 +300,47 @@ function extractText(json) {
   return '';
 }
 
+/**
+ * Lightweight health probe for the configured backend. Avoids burning a
+ * full chat-completion attempt when the backend is obviously down.
+ *
+ *  - ollama:   GET /api/version          (cheap, no model load)
+ *  - openclaw: GET /healthz, fall back to base URL
+ *
+ * Result is cached for HEALTH_CHECK_INTERVAL_MS so we don't hammer it.
+ */
+async function checkBackendHealth(force = false) {
+  const now = Date.now();
+  if (!force && now - _lastHealthCheckMs < HEALTH_CHECK_INTERVAL_MS) {
+    return _backendHealthy;
+  }
+  _lastHealthCheckMs = now;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 4000);
+  try {
+    let url;
+    if (BACKEND === 'ollama') {
+      url = `${OLLAMA_URL}/api/version`;
+    } else {
+      url = `${OPENCLAW_GATEWAY_URL}/healthz`;
+    }
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!_backendHealthy) log('info', `backend recovered (${BACKEND})`);
+    _backendHealthy = true;
+    _lastHealthError = '';
+    return true;
+  } catch (err) {
+    const wasHealthy = _backendHealthy;
+    _backendHealthy = false;
+    _lastHealthError = String(err).slice(0, 200);
+    if (wasHealthy) log('error', `backend unhealthy (${BACKEND}): ${_lastHealthError}`);
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function chatComplete(messages) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
@@ -313,7 +360,18 @@ async function chatComplete(messages) {
     if (!res.ok) throw new Error(`POST ${url} → HTTP ${res.status}: ${bodyText.slice(0, 300)}`);
     let json;
     try { json = JSON.parse(bodyText); } catch { json = { text: bodyText }; }
+    // Successful call → mark backend healthy regardless of cached state.
+    _backendHealthy = true;
+    _lastHealthError = '';
     return extractText(json) || '';
+  } catch (err) {
+    // Network-class errors mark the backend unhealthy so the next poll waits.
+    const msg = String(err);
+    if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|socket hang up|aborted|fetch failed/i.test(msg)) {
+      _backendHealthy = false;
+      _lastHealthError = msg.slice(0, 200);
+    }
+    throw err;
   } finally {
     clearTimeout(t);
   }
@@ -450,11 +508,22 @@ async function processJob(job) {
     log('error', `job ${jobId} failed`, { error: errMsg });
     const fails = (_failCounts.get(jobId) || 0) + 1;
     _failCounts.set(jobId, fails);
+    // If the backend just went unhealthy, don't count this against the job —
+    // hold it until the backend recovers.
+    const isNetworkErr = /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EHOSTUNREACH|socket hang up|aborted|fetch failed/i.test(errMsg);
+    if (isNetworkErr && !_backendHealthy) {
+      _failCounts.set(jobId, Math.max(0, fails - 1)); // un-count this attempt
+      return;
+    }
+
     if (fails >= 3) {
+      const friendly = isNetworkErr
+        ? `OpenClaw is offline right now. Your message is queued and will be answered when it's back.`
+        : `⚠️ Bridge error after ${fails} tries: ${errMsg.slice(0, 400)}`;
       try {
         await cockpitPost('/api/chat/reply', {
           message_id: job.message_id,
-          reply_text: `⚠️ Bridge error after ${fails} tries: ${errMsg.slice(0, 400)}`,
+          reply_text: friendly,
           role: 'assistant',
         });
       } catch (e) {
@@ -473,7 +542,17 @@ async function poll() {
   try {
     const data = await cockpitGet('/api/chat/pending?status=queued');
     const jobs = (data.jobs || []).filter((j) => j.kind === 'chat');
-    if (jobs.length) log('debug', `poll: ${jobs.length} queued`);
+    if (!jobs.length) return;
+
+    // Health gate: if the local model is down, don't burn retries — just
+    // wait for it to come back. Jobs stay queued and get picked up later.
+    const healthy = await checkBackendHealth();
+    if (!healthy) {
+      log('debug', `poll: ${jobs.length} queued but backend unhealthy — holding`);
+      return;
+    }
+
+    log('debug', `poll: ${jobs.length} queued`);
     await Promise.all(jobs.map((j) => processJob(j)));
   } catch (err) {
     log('error', 'poll failed', { error: String(err) });
