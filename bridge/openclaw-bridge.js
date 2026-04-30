@@ -36,6 +36,11 @@ const COCKPIT_BACKEND_URL = (process.env.COCKPIT_BACKEND_URL || '').replace(/\/$
 const COCKPIT_ADMIN_TOKEN = process.env.COCKPIT_ADMIN_TOKEN || '';
 const OPENCLAW_GATEWAY_URL = (process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789').replace(/\/$/, '');
 const OPENCLAW_GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const OLLAMA_URL = (process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/$/, '');
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct';
+// 'ollama' = talk straight to Ollama (fast, no tool-prompt overhead)
+// 'openclaw' = route through OpenClaw gateway /v1/chat/completions
+const BACKEND = (process.env.BRIDGE_BACKEND || 'ollama').toLowerCase();
 const POLL_INTERVAL_MS = parseInt(process.env.BRIDGE_POLL_INTERVAL_MS || '3000', 10);
 const LOG_LEVEL = process.env.BRIDGE_LOG_LEVEL || 'info';
 
@@ -47,7 +52,7 @@ function validateConfig() {
   const errors = [];
   if (!COCKPIT_BACKEND_URL) errors.push('COCKPIT_BACKEND_URL is required');
   if (!COCKPIT_ADMIN_TOKEN) errors.push('COCKPIT_ADMIN_TOKEN is required');
-  if (!OPENCLAW_GATEWAY_TOKEN) errors.push('OPENCLAW_GATEWAY_TOKEN is required');
+  if (BACKEND === 'openclaw' && !OPENCLAW_GATEWAY_TOKEN) errors.push('OPENCLAW_GATEWAY_TOKEN is required when BRIDGE_BACKEND=openclaw');
   if (errors.length) {
     console.error('[bridge] Missing configuration:\n  ' + errors.join('\n  '));
     process.exit(1);
@@ -199,10 +204,28 @@ async function sendToOpenClaw(job) {
     throw new Error('empty message text — cannot forward to OpenClaw');
   }
 
-  log('debug', `→ OpenClaw: ${content.slice(0, 80)}...`);
+  log('debug', `→ ${BACKEND}: ${content.slice(0, 80)}...`);
 
-  // OpenClaw 2026.4.27+ exposes OpenAI-compatible /v1/chat/completions.
-  // Model id format uses a slash, e.g. "openclaw/main" (NOT "openclaw:main").
+  if (BACKEND === 'ollama') {
+    // Talk directly to Ollama via the socat bridge. No tool-prompt overhead,
+    // ~3-8s replies instead of 60s. Uses Ollama's OpenAI-compat endpoint.
+    return await tryEndpointDirect(
+      `${OLLAMA_URL}/v1/chat/completions`,
+      {
+        model: OLLAMA_MODEL,
+        messages: [
+          { role: 'system', content: 'You are OpenClaw, Raine\'s personal local AI assistant. Keep replies short and direct (under 3 sentences when possible). If the user asks for a video edit (Reels/captions/9:16/blur N-numbers), reply with [ESCALATE] followed by what they want. If you need clarification before answering, reply with [ASK] followed by your single clarifying question.' },
+          { role: 'user', content },
+        ],
+        max_tokens: 384,
+        stream: false,
+      },
+      `ollama:${OLLAMA_MODEL}`,
+      null  // no auth on local Ollama
+    );
+  }
+
+  // OpenClaw gateway path. Slower because OpenClaw injects a large tool-call system prompt.
   return await tryEndpoint(
     `${OPENCLAW_GATEWAY_URL}/v1/chat/completions`,
     {
@@ -216,6 +239,29 @@ async function sendToOpenClaw(job) {
     },
     '/v1/chat/completions'
   );
+}
+
+async function tryEndpointDirect(url, payload, label, bearerToken) {
+  const controller = new AbortController();
+  const timeoutMs = parseInt(process.env.OPENCLAW_TIMEOUT_MS || '300000', 10);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = { 'Content-Type': 'application/json' };
+  if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+  const bodyText = await res.text();
+  if (!res.ok) {
+    const err = new Error(`POST ${label} → HTTP ${res.status}: ${bodyText.slice(0, 300)}`);
+    err.status = res.status;
+    throw err;
+  }
+  let json;
+  try { json = JSON.parse(bodyText); } catch { json = { text: bodyText }; }
+  return extractText(json) || JSON.stringify(json).slice(0, 800);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */
@@ -407,7 +453,10 @@ validateConfig();
 
 log('info', 'OpenClaw Bridge starting', {
   cockpit: COCKPIT_BACKEND_URL,
+  backend: BACKEND,
   openclaw: OPENCLAW_GATEWAY_URL,
+  ollama: OLLAMA_URL,
+  ollamaModel: OLLAMA_MODEL,
   pollIntervalMs: POLL_INTERVAL_MS,
 });
 
