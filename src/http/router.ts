@@ -56,9 +56,16 @@ import {
   upsertPendingJob,
   getFeedbackRequests,
   upsertFeedbackRequest,
+  getVaultJobs,
+  upsertVaultJob,
+  getVaultStatus,
+  setVaultStatus,
   type ChatMessage,
   type PendingJob,
   type FeedbackRequest,
+  type VaultJob,
+  type VaultJobKind,
+  type VaultStatus,
 } from '../state/store.js';
 
 import {
@@ -723,6 +730,219 @@ async function handleFeedbackAnswer(
   return jsonResponse(200, { ok: true, requeued_job_id: null });
 }
 
+/* -------------------------------------------------------------------------- */
+/* Vault handlers                                                              */
+/*                                                                             */
+/* Pull-based: Cockpit creates jobs, the OpenClaw bridge polls for queued      */
+/* ones, executes them against the local Obsidian vault, and posts the result */
+/* back. The bridge also heartbeats /api/vault/status so the dashboard tile    */
+/* shows "connected" without needing a job to run.                             */
+/* -------------------------------------------------------------------------- */
+
+const VAULT_JOB_KINDS: ReadonlyArray<VaultJobKind> = [
+  'append',
+  'read',
+  'list',
+  'daily-note',
+];
+
+/**
+ * Validates a vault job payload. Returns null on success or an error string
+ * to send back as a 400. Path validation lives in the bridge (vault.js)
+ * — this only enforces shape so we can reject malformed jobs early.
+ */
+function validateVaultJobPayload(
+  kind: VaultJobKind,
+  payload: Record<string, unknown>,
+): string | null {
+  if (kind === 'append') {
+    if (typeof payload.path !== 'string' || !payload.path) return 'append: missing "path"';
+    if (typeof payload.text !== 'string') return 'append: missing "text"';
+    return null;
+  }
+  if (kind === 'read') {
+    if (typeof payload.path !== 'string' || !payload.path) return 'read: missing "path"';
+    return null;
+  }
+  if (kind === 'list') {
+    if (typeof payload.folder !== 'string' || !payload.folder)
+      return 'list: missing "folder"';
+    return null;
+  }
+  if (kind === 'daily-note') {
+    if (typeof payload.text !== 'string' || !payload.text)
+      return 'daily-note: missing "text"';
+    return null;
+  }
+  return `unknown kind "${kind}"`;
+}
+
+/**
+ * POST /api/vault/jobs
+ * body: { kind: 'append'|'read'|'list'|'daily-note', payload: {...} }
+ * Returns: { ok, job_id }
+ */
+async function handleVaultJobCreate(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const kind = body.kind as VaultJobKind | undefined;
+  if (!kind || !VAULT_JOB_KINDS.includes(kind)) {
+    return badRequest(`invalid "kind" (must be one of: ${VAULT_JOB_KINDS.join(', ')})`);
+  }
+  const payload = body.payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return badRequest('missing or invalid "payload" object');
+  }
+  const validation = validateVaultJobPayload(kind, payload as Record<string, unknown>);
+  if (validation) return badRequest(validation);
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const ts = new Date().toISOString();
+  const job: VaultJob = {
+    id: genId('vjob'),
+    kind,
+    payload: payload as Record<string, unknown>,
+    status: 'queued',
+    created_at: ts,
+    updated_at: ts,
+  };
+  await upsertVaultJob(ctx, job);
+  return jsonResponse(200, { ok: true, job_id: job.id });
+}
+
+/**
+ * GET /api/vault/jobs/pending
+ * The bridge polls this every few seconds. Returns queued jobs only.
+ * Side effect: heartbeats vault_status.last_seen so the dashboard tile
+ * stays green even when no jobs are flowing.
+ */
+async function handleVaultJobsPending(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const jobs = await getVaultJobs(ctx);
+  const queued = jobs.filter((j) => j.status === 'queued');
+
+  // Heartbeat: record that the bridge polled. Status defaults preserved.
+  const status = await getVaultStatus(ctx);
+  await setVaultStatus(ctx, { ...status, last_seen: new Date().toISOString() });
+
+  return jsonResponse(200, { ok: true, jobs: queued });
+}
+
+/**
+ * POST /api/vault/jobs/:id/result
+ * body: { ok: bool, result?: any, error?: string, dry_run?: bool }
+ * The bridge calls this after executing a job. Side effect: updates
+ * vault_status counters (last_write, writes_today) when a write succeeds.
+ */
+async function handleVaultJobResult(
+  req: CockpitHttpRequest,
+  jobId: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const okFlag = body.ok;
+  if (typeof okFlag !== 'boolean') return badRequest('missing boolean "ok"');
+  const dryRun = typeof body.dry_run === 'boolean' ? body.dry_run : undefined;
+  const error = typeof body.error === 'string' ? body.error : undefined;
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const jobs = await getVaultJobs(ctx);
+  const job = jobs.find((j) => j.id === jobId);
+  if (!job) return badRequest(`vault job "${jobId}" not found`);
+
+  const ts = new Date().toISOString();
+  const updated: VaultJob = {
+    ...job,
+    status: okFlag ? 'done' : 'error',
+    updated_at: ts,
+    ...(body.result !== undefined ? { result: body.result } : {}),
+    ...(error ? { error } : {}),
+    ...(dryRun !== undefined ? { dry_run: dryRun } : {}),
+  };
+  await upsertVaultJob(ctx, updated);
+
+  // Update aggregate status. Only count successful, non-dry-run writes.
+  const status = await getVaultStatus(ctx);
+  const next: VaultStatus = { ...status, last_seen: ts };
+  if (okFlag) {
+    next.last_error = undefined;
+    if ((job.kind === 'append' || job.kind === 'daily-note') && dryRun !== true) {
+      next.last_write = ts;
+      const today = ts.slice(0, 10); // YYYY-MM-DD UTC
+      if (next.writes_today_date === today) {
+        next.writes_today = (next.writes_today ?? 0) + 1;
+      } else {
+        next.writes_today = 1;
+        next.writes_today_date = today;
+      }
+    }
+  } else if (error) {
+    next.last_error = error;
+  }
+  await setVaultStatus(ctx, next);
+
+  return jsonResponse(200, { ok: true });
+}
+
+/**
+ * GET /api/vault/status
+ * Dashboard tile reads this every ~10s. Cheap, no side effects.
+ */
+async function handleVaultStatusGet(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const status = await getVaultStatus(ctx);
+  return jsonResponse(200, { ok: true, status });
+}
+
+/**
+ * POST /api/vault/status
+ * The bridge posts its diagnostic() snapshot here on startup so the
+ * dashboard knows the vault is enabled, where it points, and dry-run state.
+ * body: { enabled, dry_run, vault_root? }
+ */
+async function handleVaultStatusPost(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof body.enabled !== 'boolean') return badRequest('missing boolean "enabled"');
+  if (typeof body.dry_run !== 'boolean') return badRequest('missing boolean "dry_run"');
+  const vaultRoot = typeof body.vault_root === 'string' ? body.vault_root : undefined;
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const prev = await getVaultStatus(ctx);
+  const next: VaultStatus = {
+    ...prev,
+    enabled: body.enabled,
+    dry_run: body.dry_run,
+    last_seen: new Date().toISOString(),
+    ...(vaultRoot ? { vault_root: vaultRoot } : {}),
+  };
+  await setVaultStatus(ctx, next);
+  return jsonResponse(200, { ok: true, status: next });
+}
+
+/**
+ * `/api/vault/jobs/:id/result` — matches if the path is exactly
+ * /api/vault/jobs/<id>/result. Returns the decoded job id, or null.
+ */
+function matchVaultJobResult(p: string): string | null {
+  const prefix = '/api/vault/jobs/';
+  const suffix = '/result';
+  if (!p.startsWith(prefix) || !p.endsWith(suffix)) return null;
+  const middle = p.slice(prefix.length, p.length - suffix.length);
+  if (!middle || middle.includes('/')) return null;
+  return decodeURIComponent(middle);
+}
+
 /**
  * GET /api/feedback/pending
  * Returns unresolved feedback_requests.
@@ -906,6 +1126,31 @@ const STATIC_ROUTES: CockpitRoute[] = [
     description: 'Escalate a chat job to Computer (admin)',
     handler: handlePostChatEscalate,
   },
+  // Vault endpoints (Phase 2: poll-based bridge integration)
+  {
+    method: 'POST',
+    path: '/api/vault/jobs',
+    description: 'Enqueue a vault job (append/read/list/daily-note) (admin)',
+    handler: handleVaultJobCreate,
+  },
+  {
+    method: 'GET',
+    path: '/api/vault/jobs/pending',
+    description: 'Bridge poll: returns queued vault jobs (admin)',
+    handler: handleVaultJobsPending,
+  },
+  {
+    method: 'GET',
+    path: '/api/vault/status',
+    description: 'Dashboard tile: vault subsystem status (admin)',
+    handler: handleVaultStatusGet,
+  },
+  {
+    method: 'POST',
+    path: '/api/vault/status',
+    description: 'Bridge heartbeat: posts diagnostic snapshot (admin)',
+    handler: handleVaultStatusPost,
+  },
   // Feedback endpoints
   {
     method: 'POST',
@@ -1051,6 +1296,13 @@ async function dispatch(req: CockpitHttpRequest): Promise<CockpitHttpResponse> {
     return await handleInboundHook(req, mappingId);
   }
 
+  // Vault job result: /api/vault/jobs/:id/result dynamic route.
+  const vaultResultId = matchVaultJobResult(req.path);
+  if (vaultResultId !== null) {
+    if (req.method !== 'POST') return methodNotAllowed();
+    return await handleVaultJobResult(req, vaultResultId);
+  }
+
   // State store: /api/state/:key dynamic routes.
   const stateKey = matchStateKey(req.path);
   if (stateKey !== null) {
@@ -1060,9 +1312,13 @@ async function dispatch(req: CockpitHttpRequest): Promise<CockpitHttpResponse> {
     return methodNotAllowed();
   }
 
-  const match = STATIC_ROUTES.find((r) => r.path === req.path);
-  if (!match) return notFound();
-  if (match.method !== req.method) return methodNotAllowed();
+  // Some paths (e.g. /api/vault/status) accept multiple methods. We resolve
+  // path → method-set first so a wrong method on a real path returns 405,
+  // while an unknown path returns 404.
+  const samePath = STATIC_ROUTES.filter((r) => r.path === req.path);
+  if (samePath.length === 0) return notFound();
+  const match = samePath.find((r) => r.method === req.method);
+  if (!match) return methodNotAllowed();
   return await match.handler(req);
 }
 

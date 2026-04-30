@@ -7,11 +7,46 @@ daily log entries — on behalf of Cockpit OS in the cloud. Cockpit OS
 itself never touches the filesystem. All disk operations happen on the
 machine running the bridge, against a single configured vault folder.
 
-## Phase 1 (current): vault module + path safety
+## Phase 1: vault module + path safety (shipped)
 
 This phase ships the `vault.js` module and its 27-test suite. It's a
-library only — no API routes are exposed yet, no chat capture is wired
-up. You can test it standalone before any network surface comes online.
+library that the bridge can call directly — every disk write goes through
+the five hard guarantees below.
+
+## Phase 2: poll-based job queue + dashboard tile (shipped)
+
+This phase wires Cockpit OS to the vault module via a poll-based queue.
+Nothing in the cloud touches your disk; Cockpit only enqueues a job, the
+bridge picks it up, runs it locally, and reports back.
+
+**Cockpit OS endpoints (all admin-token-gated):**
+
+| Method + path | Caller | Purpose |
+|---|---|---|
+| `POST /api/vault/jobs` | any admin client | Enqueue a job. Body: `{ kind, payload }`. Kinds: `append`, `read`, `list`, `daily-note`. |
+| `GET /api/vault/jobs/pending` | the bridge | Poll for queued jobs (every 3s). Heartbeats `last_seen`. |
+| `POST /api/vault/jobs/:id/result` | the bridge | Post the execution result. Updates job status + write counters. |
+| `GET /api/vault/status` | the dashboard | Read for the status pill. Shape: `{ enabled, dry_run, vault_root, last_seen, last_write, writes_today, last_error }`. |
+| `POST /api/vault/status` | the bridge | Heartbeat the diagnostic snapshot at startup. |
+
+**Bridge changes:**
+
+- New `pollVaultJobs()` runs alongside the chat poller (independent
+  interval, so vault work never blocks chat).
+- On startup, the bridge announces its `diagnostic()` to
+  `POST /api/vault/status` so the dashboard pill turns green even before
+  any job runs.
+- The vault poll is silent when `COCKPIT_VAULT_PATH` isn't set.
+
+**Dashboard pill (`Vault` next to `Sync` in the header):**
+
+- Grey: bridge offline, or vault disabled.
+- Amber: bridge connected, but in dry-run mode (no real writes).
+- Green: bridge connected, real writes happening.
+- Red: last reported bridge error (clears on next success).
+
+Hover the pill for a tooltip with the vault root, last-write timestamp,
+and today's write count.
 
 ## Configuration
 
@@ -97,21 +132,13 @@ Then check the daily note in Obsidian:
 `F:\Vault\Daily Notes\YYYY-MM-DD.md` should now contain a timestamped
 line.
 
-## What's coming next (not in this phase)
-
-Phase 2 will add API routes on Cockpit OS that the bridge polls /
-responds to:
-
-- `POST /api/vault/append` — append text to a path inside the vault
-- `GET  /api/vault/flight-log` — list parsed entries from `Flying/`
-- `GET  /api/vault/tasks` — list task lines parsed from `Tasks/Inbox.md`
-- `POST /api/vault/tasks` — append a new task with a stable ID
+## What's coming next
 
 Phase 3: two-way task sync (stable IDs embedded as HTML comments in
-markdown lines).
+markdown lines, last-write-wins reconciler).
 
 Phase 4: chat capture — every Cockpit chat message appends to today's
-daily note.
+daily note via the new `daily-note` job kind.
 
 Each phase ships independently, with tests, and behind dry-run until
 verified.

@@ -29,6 +29,7 @@
  */
 
 import fetch from 'node-fetch';
+import * as vault from './vault.js';
 
 /* ─────────────── Config ─────────────── */
 
@@ -44,6 +45,7 @@ const LOG_LEVEL = process.env.BRIDGE_LOG_LEVEL || 'info';
 const MAX_TOOL_HOPS = parseInt(process.env.BRIDGE_MAX_TOOL_HOPS || '4', 10);
 const MODEL_TIMEOUT_MS = parseInt(process.env.OPENCLAW_TIMEOUT_MS || '120000', 10);
 const HEALTH_CHECK_INTERVAL_MS = parseInt(process.env.BRIDGE_HEALTH_CHECK_MS || '15000', 10);
+const VAULT_POLL_INTERVAL_MS = parseInt(process.env.BRIDGE_VAULT_POLL_INTERVAL_MS || '3000', 10);
 
 // Backend health state — when unhealthy, jobs wait instead of failing loudly.
 let _backendHealthy = true;
@@ -536,6 +538,102 @@ async function processJob(job) {
   }
 }
 
+/* ─────────────── Vault poll loop ─────────────── */
+/**
+ * Polls /api/vault/jobs/pending and runs each queued job against the local
+ * Obsidian vault. Each job is executed exactly once — we POST the result
+ * back so the server transitions queued → done|error and updates counters.
+ *
+ * The vault module enforces all path-safety guarantees; this loop only
+ * dispatches by `kind` and reports back. Dry-run state is read from the
+ * vault module so it accurately reflects what was (or wasn't) written.
+ */
+
+const _vaultInFlight = new Set();
+
+async function executeVaultJob(job) {
+  const kind = job.kind;
+  const p = job.payload || {};
+  if (kind === 'append') {
+    return vault.appendToFile(String(p.path), String(p.text ?? ''));
+  }
+  if (kind === 'daily-note') {
+    return vault.appendDailyNote(String(p.text), p.source ? String(p.source) : 'cockpit');
+  }
+  if (kind === 'read') {
+    const text = await vault.readFile(String(p.path));
+    return { read: true, text, length: text.length };
+  }
+  if (kind === 'list') {
+    const opts = p.recursive === true ? { recursive: true } : {};
+    const files = await vault.listMarkdownFiles(String(p.folder), opts);
+    return { folder: p.folder, files };
+  }
+  throw new Error(`unknown vault job kind "${kind}"`);
+}
+
+async function processVaultJob(job) {
+  if (_vaultInFlight.has(job.id)) return;
+  _vaultInFlight.add(job.id);
+  try {
+    const result = await executeVaultJob(job);
+    await cockpitPost(`/api/vault/jobs/${encodeURIComponent(job.id)}/result`, {
+      ok: true,
+      result,
+      dry_run: vault.isDryRun(),
+    });
+    log('info', `vault job ${job.id} (${job.kind}) done`, {
+      dry_run: vault.isDryRun(),
+    });
+  } catch (err) {
+    const msg = String(err && err.message ? err.message : err).slice(0, 500);
+    try {
+      await cockpitPost(`/api/vault/jobs/${encodeURIComponent(job.id)}/result`, {
+        ok: false,
+        error: msg,
+        dry_run: vault.isDryRun(),
+      });
+    } catch (postErr) {
+      log('error', `vault job ${job.id} result POST failed`, { error: String(postErr) });
+    }
+    log('error', `vault job ${job.id} failed`, { error: msg });
+  } finally {
+    _vaultInFlight.delete(job.id);
+  }
+}
+
+async function pollVaultJobs() {
+  if (!vault.isEnabled()) return; // No vault configured — stay silent.
+  try {
+    const data = await cockpitGet('/api/vault/jobs/pending');
+    const jobs = data.jobs || [];
+    if (!jobs.length) return;
+    log('debug', `vault poll: ${jobs.length} queued`);
+    await Promise.all(jobs.map((j) => processVaultJob(j)));
+  } catch (err) {
+    log('error', 'vault poll failed', { error: String(err) });
+  }
+}
+
+/**
+ * Posts the vault diagnostic snapshot once at startup so the dashboard tile
+ * can show "connected" without waiting for traffic.
+ */
+async function announceVaultStatus() {
+  if (!vault.isEnabled()) return;
+  try {
+    const diag = vault.diagnostic();
+    await cockpitPost('/api/vault/status', {
+      enabled: !!diag.enabled,
+      dry_run: !!diag.dryRun,
+      vault_root: diag.vaultRoot || '',
+    });
+    log('info', 'vault status announced', { dryRun: diag.dryRun, root: diag.vaultRoot });
+  } catch (err) {
+    log('error', 'vault status announce failed', { error: String(err) });
+  }
+}
+
 /* ─────────────── Poll loop ─────────────── */
 
 async function poll() {
@@ -574,6 +672,21 @@ log('info', 'OpenClaw Bridge v2 (tool-calling) starting', {
 
 poll();
 setInterval(poll, POLL_INTERVAL_MS);
+
+// Vault sub-system (Phase 2). Independent poll loop so vault work doesn't
+// block chat handling and vice versa.
+if (vault.isEnabled()) {
+  log('info', 'vault poll loop enabled', {
+    intervalMs: VAULT_POLL_INTERVAL_MS,
+    dryRun: vault.isDryRun(),
+    root: vault.getVaultRoot(),
+  });
+  announceVaultStatus();
+  pollVaultJobs();
+  setInterval(pollVaultJobs, VAULT_POLL_INTERVAL_MS);
+} else {
+  log('info', 'vault disabled (set COCKPIT_VAULT_PATH to enable)');
+}
 
 process.on('SIGINT', () => { log('info', 'SIGINT'); process.exit(0); });
 process.on('SIGTERM', () => { log('info', 'SIGTERM'); process.exit(0); });
