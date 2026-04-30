@@ -22,6 +22,7 @@
  */
 
 import { promises as fs } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import url from 'node:url';
 import * as vault from './vault.js';
@@ -34,15 +35,42 @@ import {
 
 const ACTIVE_REL = 'Tasks/Active.md';
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-const COCKPIT_HTML = path.join(__dirname, '..', 'src', 'http', 'ui', 'cockpit.html');
+const REPO_ROOT = path.join(__dirname, '..');
+const COCKPIT_HTML_REL = 'src/http/ui/cockpit.html';
+// The Phase 3 commit deleted the GTASKS literal from cockpit.html. We pull
+// the last copy from git history. Override with --commit=<sha> if needed.
+const DEFAULT_FALLBACK_COMMIT = '3c49d71';
+
+/**
+ * Read cockpit.html. First try the working tree; if the GTASKS literal is
+ * gone (Phase 3+), fall back to the named git commit that still contains it.
+ */
+async function readCockpitHtml() {
+  const live = path.join(REPO_ROOT, COCKPIT_HTML_REL);
+  try {
+    const html = await fs.readFile(live, 'utf-8');
+    if (html.includes('const GTASKS = [{')) return { html, source: 'working-tree' };
+    if (/const GTASKS = \[\s*\{/.test(html)) return { html, source: 'working-tree' };
+  } catch (_) {}
+  // Fall back to git history.
+  const commit = process.argv.find((a) => a.startsWith('--commit='))?.split('=')[1] || DEFAULT_FALLBACK_COMMIT;
+  console.log(`[seed-tasks] working tree has no GTASKS literal; reading from commit ${commit}`);
+  const stdout = execFileSync('git', ['show', `${commit}:${COCKPIT_HTML_REL}`], {
+    cwd: REPO_ROOT,
+    encoding: 'utf-8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return { html: stdout, source: `git:${commit}` };
+}
 
 /**
  * Extract the GTASKS array literal from cockpit.html and eval it in a
- * sandbox. We use a regex that matches `const GTASKS = [` ... `];` at the
- * top of the array (lines inside are JS objects with template strings).
+ * sandbox. Walks brackets while tracking string state so quotes / escapes
+ * inside the array don't confuse the parser.
  */
 async function extractGtasks() {
-  const html = await fs.readFile(COCKPIT_HTML, 'utf-8');
+  const { html, source } = await readCockpitHtml();
+  console.log(`[seed-tasks] cockpit.html source: ${source}`);
   const startMarker = 'const GTASKS = [';
   const startIdx = html.indexOf(startMarker);
   if (startIdx === -1) throw new Error('GTASKS const not found in cockpit.html');
