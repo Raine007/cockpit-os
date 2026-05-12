@@ -377,16 +377,17 @@ async function handleReadyz(): Promise<CockpitHttpResponse> {
 
 /**
  * GET /api/state \u2014 returns all key-value pairs for the authenticated user.
- * Query param `uid` defaults to "default" for the single-user deployment;
- * present as a forward-compat hook for multi-user future.
+ * State endpoints write under a fixed "default" uid -- this is a
+ * single-user deployment. If multi-user is ever needed, add proper
+ * identity-claim validation; never let an arbitrary `?uid=` query
+ * param decide which bucket a request reads from or writes to (M10).
  */
 async function handleGetAllState(
   req: CockpitHttpRequest,
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  const state = await getAllState(ctx, uid);
+  const state = await getAllState(ctx, 'default');
   return jsonResponse(200, { ok: true, state });
 }
 
@@ -397,8 +398,7 @@ async function handleGetState(
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  const value = await getState(ctx, uid, key);
+  const value = await getState(ctx, 'default', key);
   return jsonResponse(200, { ok: true, key, value });
 }
 
@@ -411,8 +411,7 @@ async function handleSetState(
   const body = (req.body ?? {}) as Record<string, unknown>;
   if (!('value' in body)) return badRequest('missing "value" in body');
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  await setState(ctx, uid, key, body.value);
+  await setState(ctx, 'default', key, body.value);
   return jsonResponse(200, { ok: true });
 }
 
@@ -423,8 +422,7 @@ async function handleDeleteState(
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  await deleteState(ctx, uid, key);
+  await deleteState(ctx, 'default', key);
   return jsonResponse(200, { ok: true });
 }
 
