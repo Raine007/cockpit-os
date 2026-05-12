@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="Cockpit OS"/>
@@ -263,7 +263,7 @@
 
   --text:       #fafafa;
   --text-2:     #a1a1aa;
-  --text-3:     #52525b;
+  --text-3:     #71717a;
 
   --blue:       #60a5fa;
   --blue-dim:   rgba(96,165,250,0.08);
@@ -770,7 +770,7 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
 .nt-steps ol li strong{color:var(--text);}
 
 /* ── EXPORT/IMPORT BTNS ── */
-.header-btns{display:flex;gap:var(--s2);margin-left:auto;}
+.header-btns{display:flex;gap:var(--s2);margin-left:auto;position:relative;}
 .header-btns button,.header-btns label{
   background:var(--surface-2);color:var(--text-2);
   font-size:.7rem;font-weight:600;padding:var(--s2) var(--s3);
@@ -779,6 +779,26 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
   transition:color var(--ease);
 }
 .header-btns button:hover,.header-btns label:hover{color:var(--text);}
+
+/* H1: responsive header. Below 700px the inline secondary actions collapse
+   into an overflow menu. Sync and Vault stay visible at all sizes because
+   they carry status indicators. */
+.header-inline-actions{display:flex;gap:var(--s2);}
+.header-overflow-toggle{display:none;font-size:1rem;padding:var(--s2) 12px;letter-spacing:1px;}
+.header-overflow-menu{
+  position:absolute;top:calc(100% + 6px);right:0;z-index:50;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:6px;display:flex;flex-direction:column;gap:4px;min-width:180px;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+.header-overflow-menu[hidden]{display:none;}
+.header-overflow-menu button,.header-overflow-menu label{
+  width:100%;justify-content:flex-start;text-align:left;
+}
+@media (max-width:700px){
+  .header-inline-actions{display:none;}
+  .header-overflow-toggle{display:flex;}
+}
 </style>
 </head>
 <body>
@@ -798,8 +818,6 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
       <div class="logo-sub" id="header-date">—</div>
     </div>
     <div class="header-btns">
-      <button onclick="exportData()">↑ Export</button>
-      <label>↓ Import<input type="file" accept=".json" style="display:none;" onchange="importData(event)"/></label>
       <button id="sync-btn" onclick="showSyncPanel()" title="Sync status" style="display:flex;align-items:center;gap:5px;">
         <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--text-3);display:inline-block;"></span>
         Sync
@@ -808,9 +826,22 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
         <span id="vault-dot" style="width:7px;height:7px;border-radius:50%;background:var(--text-3);display:inline-block;"></span>
         Vault
       </button>
-      <button onclick="sendToComputer()" title="Offload a task to Computer" style="display:flex;align-items:center;gap:5px;background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px 10px;font-size:var(--text-sm);cursor:pointer;">
-        &#x1F4E4; Send to Claw
-      </button>
+      <!-- H1: inline secondary actions. Hidden under 700px; replaced by the overflow menu below. -->
+      <div class="header-inline-actions">
+        <button onclick="exportData()">&uarr; Export</button>
+        <label>&darr; Import<input type="file" accept=".json" style="display:none;" onchange="importData(event)"/></label>
+        <button onclick="sendToComputer()" title="Offload a task to Computer" style="display:flex;align-items:center;gap:5px;background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px 10px;font-size:var(--text-sm);cursor:pointer;">
+          &#x1F4E4; Send to Claw
+        </button>
+      </div>
+      <!-- H1: overflow toggle. Shown only under 700px. -->
+      <button class="header-overflow-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="header-overflow-menu" onclick="toggleHeaderOverflow(event)" title="More actions">&middot;&middot;&middot;</button>
+      <!-- H1: overflow menu. Positioned absolute over the header-btns container. -->
+      <div class="header-overflow-menu" id="header-overflow-menu" role="menu" hidden>
+        <button role="menuitem" onclick="exportData();closeHeaderOverflow()">&uarr; Export</button>
+        <label role="menuitem">&darr; Import<input type="file" accept=".json" style="display:none;" onchange="importData(event);closeHeaderOverflow()"/></label>
+        <button role="menuitem" onclick="sendToComputer();closeHeaderOverflow()" style="color:var(--blue);">&#x1F4E4; Send to Claw</button>
+      </div>
     </div>
     <div id="offload-status" style="font-size:var(--text-xs);color:var(--amber);text-align:right;padding-right:4px;min-height:1em;"></div>
   </div>
@@ -3331,9 +3362,50 @@ function getScheduleBlocks(){
   return base.sort((a,b)=>a.start-b.start);
 }
 
+// ── HEADER OVERFLOW MENU (H1) ──
+// Shown only at narrow widths (<=700px) via CSS. The menu element lives in
+// the header markup; this just toggles visibility and wires up close-on-
+// outside-click and Escape-to-close. Listeners attach only while open so
+// there's no work happening when the menu is closed.
+function toggleHeaderOverflow(e){
+  if(e && typeof e.stopPropagation === 'function') e.stopPropagation();
+  const menu = document.getElementById('header-overflow-menu');
+  const toggle = document.querySelector('.header-overflow-toggle');
+  if(!menu) return;
+  if(menu.hasAttribute('hidden')){
+    menu.removeAttribute('hidden');
+    if(toggle) toggle.setAttribute('aria-expanded','true');
+    // Use setTimeout so the click that opened the menu doesn't immediately close it
+    setTimeout(()=>{
+      document.addEventListener('click', _headerOverflowOutsideClick);
+      document.addEventListener('keydown', _headerOverflowEscapeKey);
+    }, 0);
+  } else {
+    closeHeaderOverflow();
+  }
+}
+function closeHeaderOverflow(){
+  const menu = document.getElementById('header-overflow-menu');
+  const toggle = document.querySelector('.header-overflow-toggle');
+  if(!menu) return;
+  menu.setAttribute('hidden','');
+  if(toggle) toggle.setAttribute('aria-expanded','false');
+  document.removeEventListener('click', _headerOverflowOutsideClick);
+  document.removeEventListener('keydown', _headerOverflowEscapeKey);
+}
+function _headerOverflowOutsideClick(e){
+  const menu = document.getElementById('header-overflow-menu');
+  const toggle = document.querySelector('.header-overflow-toggle');
+  if(!menu || menu.hasAttribute('hidden')) return;
+  if(menu.contains(e.target) || (toggle && toggle.contains(e.target))) return;
+  closeHeaderOverflow();
+}
+function _headerOverflowEscapeKey(e){
+  if(e.key === 'Escape') closeHeaderOverflow();
+}
+
 // ── SYNC PANEL UI ──
-function showSyncPanel(){
-  const panel = document.getElementById('sync-panel');
+function showSyncPanel(){  const panel = document.getElementById('sync-panel');
   // Show the backend URL as the "sync ID" — all devices hitting the same backend share state
   const backendOrigin = window.location.origin;
   const syncId = document.getElementById('sync-uid-display');
