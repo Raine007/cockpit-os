@@ -511,8 +511,13 @@ async function enqueueDailyNoteJob(
       updated_at: ts,
     };
     await upsertVaultJob(ctx, job);
-  } catch (_) {
-    /* never let vault enqueue failure surface to chat callers */
+  } catch (err) {
+    // M7: still swallowing — chat callers must not break if the vault
+    // enqueue fails — but leave a breadcrumb in logs so we can find
+    // these silent failures when something is off.
+    logger.warn('vault enqueue failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -895,6 +900,13 @@ async function handleVaultJobResult(
   const jobs = await getVaultJobs(ctx);
   const job = jobs.find((j) => j.id === jobId);
   if (!job) return badRequest(`vault job "${jobId}" not found`);
+
+  // M8: bridge can retry the result POST after a network glitch. Without
+  // this guard, writes_today would increment twice for one logical write,
+  // and the audit log would record duplicate completion events.
+  if (job.status === 'done' || job.status === 'error') {
+    return jsonResponse(200, { ok: true, already_completed: true });
+  }
 
   const ts = new Date().toISOString();
   const updated: VaultJob = {
