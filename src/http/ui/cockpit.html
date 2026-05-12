@@ -670,12 +670,7 @@ img,svg{display:block;max-width:100%;}
 .score-num.amber{color:var(--amber);}
 .score-num.crimson{color:var(--crimson);}
 .score-sub{font-size:var(--text-sm);color:var(--text-3);margin-top:var(--s2);}
-.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:var(--s2);margin-top:var(--s3);}
-.week-pip{display:flex;flex-direction:column;align-items:center;gap:3px;}
-.week-pip-label{font-size:.5rem;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;}
-.week-pip-dot{width:100%;aspect-ratio:1;border-radius:6px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:.55rem;color:var(--text-3);}
-.week-pip-dot.done{background:var(--blue-dim);color:var(--blue);}
-.week-pip-dot.today{box-shadow:0 0 0 1.5px var(--blue);}
+
 
 /* ── TOAST ── */
 .toast{
@@ -712,7 +707,7 @@ textarea.note-area{
 textarea.note-area:focus{outline:none;box-shadow:0 0 0 1.5px var(--blue);}
 textarea.note-area::placeholder{color:var(--text-3);}
 button,a,[role=button]{min-height:44px;min-width:44px;}
-.pill,.ledger-row,.week-pip-dot,.task-chip-check,.btn-sm{min-height:unset;min-width:unset;}
+.pill,.ledger-row,.task-chip-check,.btn-sm{min-height:unset;min-width:unset;}
 
 /* ── NEXT TASK CARD ── */
 #next-task-card{
@@ -2114,8 +2109,6 @@ function renderToday(){
   // Show task notes if available
   const mNotesEl=document.getElementById('mission-notes');
   if(mNotesEl){mNotesEl.textContent=mNotes||'';mNotesEl.style.display=mNotes?'block':'none';}
-  const task=ls('today_task','');  // keep for legacy compat
-  void task;
   const isDone=ls('mission_done_day','')===todayKey();
   const btn=document.getElementById('mission-btn');
   btn.className='mission-check-btn'+(isDone?' done':'');
@@ -2143,7 +2136,6 @@ function renderToday(){
   // Gumroad snapshot
   document.getElementById('snap-gumroad').textContent=fmtMoney(ls('gum_total',0));
 
-  renderWeekGrid();
   renderQuickNotes();
   renderNextTask();
 }
@@ -2182,15 +2174,6 @@ function toggleTask(id,el){
 }
 
 // ── SCHEDULE ──
-const _BLOCKS_LEGACY=[
-  {start:7*60+35,end:7*60+45,icon:'🚗',label:'Leave for school',note:'10 min drive — don\'t be late.'},
-  {start:7*60+45,end:14*60+20,icon:'🏫',label:'School',note:'Ends 2:20pm. Ground school in your head.'},
-  {start:14*60+20,end:15*60+30,icon:'🔄',label:'Transition / decompress',note:'Review notes, plan the afternoon.'},
-  {start:15*60+30,end:17*60+30,icon:'✈️',label:'Flight lesson / sim',note:'2-3x per week target. Every hour counts.'},
-  {start:17*60+30,end:19*60+30,icon:'🎬',label:'Content creation',note:'Edit reels, post, engage Reddit/Quora.'},
-  {start:19*60+30,end:22*60,icon:'🔨',label:'Job / Drywall work',note:'$400-500/wk. Stack it.'},
-  {start:22*60,end:24*60,icon:'🌙',label:'Wind down → Midnight STOP',note:'Hard stop at midnight. No exceptions.'},
-];
 function renderSchedule(){
   // work_schedule is hydrated from backend on load and synced via ss();
   // just render directly from localStorage.
@@ -2257,10 +2240,6 @@ function logIncome(){
   ss('income_log',log);inp.value='';renderMoney();renderToday();toast('+'+fmtMoney(amt)+' logged ✓');
 }
 
-function setCheckride(){
-  toast('Checkride fund section removed.');
-}
-
 function setRobinhood(){
   const inp=document.getElementById('rh-bal-input');
   const amt=parseFloat(inp.value);if(isNaN(amt)||amt<0){toast('Invalid.');return;}
@@ -2315,7 +2294,6 @@ const RH_HOLDINGS = [
   {ticker:'OKLO',name:'Oklo',qty:1.42,price:69.03,value:98.02},
   {ticker:'COKE',name:'Coca-Cola Consolidated',qty:0.02,price:200.74,value:4.01},
 ];
-const RH_TOTAL = 1711.58;
 
 function renderInvestments(){
   // Use live prices if available, else use baked constants
@@ -3174,40 +3152,6 @@ function renderDiscipline(){
     out='<div style="text-align:center;padding:var(--s4);color:var(--green);font-weight:700;">All Todoist tasks cleared. 🔥</div>';
   }
   document.getElementById('disc-factors').innerHTML=out;
-}
-
-function toggleDisciplineFactor(id,el){
-  const today=todayKey();
-  // Handle special factors
-  if(id==='wake'||id==='sleep'){
-    const key='disc_'+id+'_'+today;
-    const val=!ls(key,false);ss(key,val);
-    el.className='task-chip-check'+(val?' done':'');el.textContent=val?'✓':'';
-    renderDiscipline();return;
-  }
-  if(id==='mission'){toggleMission();return;}
-  // Google task
-  const done=ls('tasks_done_'+today,{});
-  done[id]=!done[id];ss('tasks_done_'+today,done);
-  el.className='task-chip-check'+(done[id]?' done':'');el.textContent=done[id]?'✓':'';
-  renderDiscipline();renderToday();
-}
-
-function renderWeekGrid(){
-  const el=document.getElementById('week-grid');if(!el)return;
-  const now=new Date();el.innerHTML='';
-  for(let i=6;i>=0;i--){
-    const d=new Date(now);d.setDate(d.getDate()-i);
-    const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    const isToday=i===0;
-    const doneMission=ls('mission_done_day','')==key;
-    const label=d.toLocaleDateString('en-US',{weekday:'narrow'});
-    const pip=document.createElement('div');
-    pip.className='week-pip';
-    pip.innerHTML=`<div class="week-pip-label">${label}</div>
-      <div class="week-pip-dot ${doneMission?'done':''} ${isToday?'today':''}">${doneMission?'✓':'·'}</div>`;
-    el.appendChild(pip);
-  }
 }
 
 // ── EXPORT/IMPORT ──
