@@ -18,19 +18,33 @@
   // Show an inline auth modal (Safari blocks prompt() on page load without user gesture)
   function showAuthModal(){
     if(document.getElementById('_cockpit_auth_modal')) return;
+    // M5: respect a session-scoped dismissal so Cancel actually sticks. Without
+    // this, any code path calling getToken() (renders, polling, etc.) would
+    // re-pop the modal seconds after Cancel.
+    try {
+      if(sessionStorage.getItem('_cockpit_auth_dismissed')==='1'){
+        showAuthBanner();
+        return;
+      }
+    } catch(_){ /* sessionStorage may be unavailable in private mode */ }
     const m = document.createElement('div');
     m.id = '_cockpit_auth_modal';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(8px)';
     m.innerHTML = '<div style="background:#18181b;border:1px solid #27272a;border-radius:16px;padding:24px;max-width:420px;width:100%;color:#fafafa;font-family:-apple-system,BlinkMacSystemFont,sans-serif">' +
       '<div style="font-size:18px;font-weight:600;margin-bottom:8px">Cockpit OS</div>' +
-      '<div style="font-size:13px;color:#a1a1aa;margin-bottom:16px;line-height:1.5">Enter your admin token to sync state with the backend. Stored locally on this device only.</div>' +
+      '<div style="font-size:13px;color:#a1a1aa;margin-bottom:12px;line-height:1.5">Enter your admin token to sync state with the backend. Stored locally on this device only.</div>' +
+      '<div style="font-size:11px;color:#71717a;margin-bottom:16px;line-height:1.5;padding:8px 10px;background:#09090b;border:1px solid #27272a;border-radius:8px">Get your token from Cloud Run console &rarr; cockpit-os &rarr; Variables &amp; Secrets &rarr; COCKPIT_ADMIN_TOKEN</div>' +
       '<input id="_cockpit_token_input" type="password" autocomplete="off" placeholder="paste token" style="width:100%;padding:12px;background:#09090b;border:1px solid #27272a;border-radius:8px;color:#fafafa;font-size:14px;margin-bottom:12px;font-family:ui-monospace,monospace;-webkit-appearance:none;box-sizing:border-box"/>' +
-      '<button id="_cockpit_token_save" style="width:100%;padding:12px;background:#3b82f6;border:none;border-radius:8px;color:white;font-weight:600;font-size:14px;cursor:pointer">Save & Sync</button>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button id="_cockpit_token_cancel" style="flex:0 0 auto;padding:12px 16px;background:transparent;border:1px solid #27272a;border-radius:8px;color:#a1a1aa;font-weight:600;font-size:14px;cursor:pointer">Cancel</button>' +
+        '<button id="_cockpit_token_save" style="flex:1;padding:12px;background:#3b82f6;border:none;border-radius:8px;color:white;font-weight:600;font-size:14px;cursor:pointer">Save &amp; Sync</button>' +
+      '</div>' +
       '<div id="_cockpit_token_err" style="font-size:12px;color:#ef4444;margin-top:8px;min-height:16px"></div>' +
       '</div>';
     document.body.appendChild(m);
     const input = document.getElementById('_cockpit_token_input');
     const btn = document.getElementById('_cockpit_token_save');
+    const cancel = document.getElementById('_cockpit_token_cancel');
     const err = document.getElementById('_cockpit_token_err');
     setTimeout(()=>input.focus(), 100);
     async function submit(){
@@ -41,14 +55,43 @@
         const test = await fetch('/api/state', { headers:{ 'Authorization':'Bearer '+v }});
         if(!test.ok){ err.textContent = 'Invalid token (HTTP '+test.status+')'; return; }
         localStorage.setItem('_cockpit_admin_token', v);
+        try { sessionStorage.removeItem('_cockpit_auth_dismissed'); } catch(_){}
         m.remove();
+        hideAuthBanner();
         // Now hydrate
         if(typeof _pullAll==='function') _pullAll();
       } catch(e){ err.textContent = 'Network error: '+e.message; }
     }
+    function dismiss(){
+      try { sessionStorage.setItem('_cockpit_auth_dismissed','1'); } catch(_){}
+      m.remove();
+      showAuthBanner();
+    }
     btn.addEventListener('click', submit);
+    cancel.addEventListener('click', dismiss);
     input.addEventListener('keydown', function(e){ if(e.key==='Enter') submit(); });
   }
+
+  // M5: top banner shown when the modal is dismissed without a valid token.
+  // Clicking it re-opens the modal (clears the session dismissal flag first).
+  function showAuthBanner(){
+    if(document.getElementById('_cockpit_auth_banner')) return;
+    const b = document.createElement('div');
+    b.id = '_cockpit_auth_banner';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99998;background:#7c2d12;color:#fed7aa;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:6px 12px;text-align:center;cursor:pointer;border-bottom:1px solid #9a3412';
+    b.innerHTML = 'Not authenticated &mdash; token required for sync. Tap to enter.';
+    b.addEventListener('click', function(){
+      try { sessionStorage.removeItem('_cockpit_auth_dismissed'); } catch(_){}
+      b.remove();
+      showAuthModal();
+    });
+    document.body.appendChild(b);
+  }
+  function hideAuthBanner(){
+    const b = document.getElementById('_cockpit_auth_banner');
+    if(b) b.remove();
+  }
+  window._cockpitHideAuthBanner = hideAuthBanner;
 
   function getToken(){
     let t = localStorage.getItem('_cockpit_admin_token');
