@@ -2771,15 +2771,15 @@ const REELS=[
    caption:'sunset taxi. hour 53. most kids my age are on snapchat. i\'m taxiing a $300/hr airplane. every hour costs $300 of my own money. read how. link in bio.\n\n#studentpilot #goldenhour #ppl #cessna #aviation #cockpitgrind #pilotlife #flightschool #avgeek #scottsdale',
    music:{title:'Snowfall',artist:'\u00d8neheart x reidenshi'},
    note:'Use 0:15\u20130:43. Golden-hour cockpit taxi. Cinematic, lonely. Let the sunset do the work.'},
+  {id:'r5',name:'R5 \u2014 Ebook Promo \u2605 (POSTED)',tag:'POSTED Apr 26 2026 \u2014 Benchmark reel',posted:true,
+   caption:'The Real Cost of Getting Your PPL \u2014 nobody told me this.\n\nFuel burns. Instructor fees. Exam costs. Hidden fees.\n\nI put everything in one place so you don\'t get blindsided.\n\n18 & learning to fly. This is the guide I wish I had.\n\n\u2193 Link in bio \u2014 $17.\n\n#ppl #flighttraining #studentpilot #learntofly #aviation',
+   music:{title:'Holocene',artist:'Bon Iver'},
+   note:'BENCHMARK \u2014 minimum standard for all future reels.'},
   {id:'r6',name:'R6 \u2014 Outside the Fence',tag:'dropbox',
    dbUrl:'https://www.dropbox.com/scl/fi/lbj7gm6aeiafgaaa053aj/cockpit_grind_3_reels.zip?rlkey=bkqarzucyc5g923owvdb88xqx',dbName:'reel_C_REDACTED.mp4',posted:false,
    caption:'everyone sees this. nobody sees the $91,000 bill. i\'m 18 and i track every dollar. most never start. read why. link in bio.\n\n#studentpilot #aviation #flightschool #ppl #cockpitgrind #pilotlife #avgeek #cessna #scottsdale #pilottraining',
    music:{title:'where\'s my love (sad version)',artist:'SYML'},
-   note:'Use 0:10\u20130:32. Ramp footage through chain-link fence. \u201cKid pressed against the fence\u201d POV. Hook lands hard on the $91k reveal.'},
-  {id:'r5',name:'R5 \u2014 Ebook Promo \u2605 (POSTED)',tag:'POSTED Apr 26 2026 \u2014 Benchmark reel',posted:true,
-   caption:'The Real Cost of Getting Your PPL \u2014 nobody told me this.\n\nFuel burns. Instructor fees. Exam costs. Hidden fees.\n\nI put everything in one place so you don\'t get blindsided.\n\n18 & learning to fly. This is the guide I wish I had.\n\n\u2193 Link in bio \u2014 $17.\n\n#ppl #flighttraining #studentpilot #learntofly #aviation',
-   music:{title:'Holocene',artist:'Bon Iver'},
-   note:'BENCHMARK \u2014 minimum standard for all future reels.'}
+   note:'Use 0:10\u20130:32. Ramp footage through chain-link fence. \u201cKid pressed against the fence\u201d POV. Hook lands hard on the $91k reveal.'}
 ];
 
 function switchCTab(name, btn){
@@ -2837,13 +2837,13 @@ function renderContent(){
         <div class="reel-status-dot ${isPosted?'posted':'ready'}"></div>
         <div style="flex:1">
           <div class="reel-card-name">${r.name}</div>
-          <div class="reel-card-tag">${r.tag==='dropbox'?'📁 '+r.dbName+' — Dropbox':r.tag}</div>
+          <div class="reel-card-tag">${r.tag==='dropbox' && r.dbName ? '📁 '+r.dbName+' — Dropbox' : r.tag}</div>
         </div>
         <span class="pill ${isPosted?'pill-green':'pill-blue'}" style="margin-right:var(--s2)">${isPosted?'Posted':'Ready'}</span>
         <svg class="reel-expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="reel-card-body">
-        ${r.tag==='dropbox'?`<div class="reel-section-label">Dropbox File</div><a href="${r.dbUrl}" target="_blank" style="display:flex;align-items:center;gap:var(--s3);background:var(--surface-3);border-radius:var(--r-md);padding:var(--s3) var(--s4);margin-bottom:var(--s3);text-decoration:none;"><span style="font-size:1rem;">📂</span><div style="flex:1;"><div style="font-size:var(--text-sm);font-weight:600;color:var(--blue);">${r.dbName}</div><div style="font-size:var(--text-xs);color:var(--text-2);">Tap to open in Dropbox → download from there</div></div><span style="color:var(--blue);font-size:0.8rem;">↗</span></a>`:''}
+        ${(r.tag==='dropbox' && r.dbUrl) ? `<div class="reel-section-label">Dropbox File</div><a href="${r.dbUrl}" target="_blank" style="display:flex;align-items:center;gap:var(--s3);background:var(--surface-3);border-radius:var(--r-md);padding:var(--s3) var(--s4);margin-bottom:var(--s3);text-decoration:none;"><span style="font-size:1rem;">📂</span><div style="flex:1;"><div style="font-size:var(--text-sm);font-weight:600;color:var(--blue);">${r.dbName}</div><div style="font-size:var(--text-xs);color:var(--text-2);">Tap to open in Dropbox → download from there</div></div><span style="color:var(--blue);font-size:0.8rem;">↗</span></a>` : ''}
         <div class="reel-section-label">Music</div>
         <div class="reel-music">
           <div class="reel-music-icon">🎵</div>
