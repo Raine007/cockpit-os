@@ -799,6 +799,16 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
   .header-inline-actions{display:none;}
   .header-overflow-toggle{display:flex;}
 }
+/* M2: honor OS-level reduced-motion preference. Without this, .crit-badge
+   and other elements keep animating even when the user has reduced motion
+   enabled in their accessibility settings (a vestibular-disorder issue). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 </style>
 </head>
 <body>
