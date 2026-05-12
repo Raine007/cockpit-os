@@ -1659,6 +1659,23 @@ function getNextTask(){
   return sorted.find(t => !done[t.id] && !snoozed.includes(t.id)) || null;
 }
 
+// Helper for the "Paste your posted link" UI shared by reddit-post and reel
+// task action panels. Previously duplicated inline in two else-if branches
+// of buildTaskActionPanel (H7).
+function postLinkField(task){
+  const savedLink = ls('ntlink_' + task.id, '');
+  return `<div style="margin-top:12px;padding:10px 12px;background:var(--surface-3);border:1px solid var(--border);border-radius:10px;">
+    <div class="nt-section-label" style="margin-bottom:6px;">Paste your posted link</div>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input id="ntlink-${task.id}" type="url" placeholder="Paste the live URL after you post..." value="${savedLink}"
+        style="flex:1;font-size:.68rem;padding:6px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border-hi);color:var(--text);outline:none;"/>
+      <button onclick="savePostLink('task','${task.id}',document.getElementById('ntlink-${task.id}').value)"
+        style="font-size:.62rem;padding:5px 12px;border-radius:8px;background:var(--blue);border:none;color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Save</button>
+    </div>
+    <div id="ntlink-status-${task.id}" style="font-size:.6rem;color:var(--text-3);margin-top:4px;">${savedLink ? '\u2714 Saved \u2014 I\'ll check engagement in the morning' : ''}</div>
+  </div>`;
+}
+
 // Build the action panel for a task — materials + steps, no fluff
 function buildTaskActionPanel(task){
   const t = task.title || '';
@@ -1723,18 +1740,7 @@ function buildTaskActionPanel(task){
       'Post, then reply to every comment within the first hour'
     ]);
 
-  // ── POST LINK FIELD (shown for social/content tasks) ──
-  const savedLink = ls('ntlink_' + task.id, '');
-  html += `<div style="margin-top:12px;padding:10px 12px;background:var(--surface-3);border:1px solid var(--border);border-radius:10px;">
-    <div class="nt-section-label" style="margin-bottom:6px;">Paste your posted link</div>
-    <div style="display:flex;gap:6px;align-items:center;">
-      <input id="ntlink-${task.id}" type="url" placeholder="Paste the live URL after you post..." value="${savedLink}"
-        style="flex:1;font-size:.68rem;padding:6px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border-hi);color:var(--text);outline:none;"/>
-      <button onclick="savePostLink('task','${task.id}',document.getElementById('ntlink-${task.id}').value)"
-        style="font-size:.62rem;padding:5px 12px;border-radius:8px;background:var(--blue);border:none;color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Save</button>
-    </div>
-    <div id="ntlink-status-${task.id}" style="font-size:.6rem;color:var(--text-3);margin-top:4px;">${savedLink ? '\u2714 Saved \u2014 I\'ll check engagement in the morning' : ''}</div>
-  </div>`;
+  html += postLinkField(task);
 
   // ── REEL / POST TASKS ──
   } else if(cat==='content' && (t.toLowerCase().includes('reel') || t.toLowerCase().includes('post reel'))){
@@ -1761,18 +1767,7 @@ function buildTaskActionPanel(task){
       'Post → reply to every comment in first 30 min'
     ]);
 
-  // ── POST LINK FIELD (shown for social/content tasks) ──
-  const savedLink = ls('ntlink_' + task.id, '');
-  html += `<div style="margin-top:12px;padding:10px 12px;background:var(--surface-3);border:1px solid var(--border);border-radius:10px;">
-    <div class="nt-section-label" style="margin-bottom:6px;">Paste your posted link</div>
-    <div style="display:flex;gap:6px;align-items:center;">
-      <input id="ntlink-${task.id}" type="url" placeholder="Paste the live URL after you post..." value="${savedLink}"
-        style="flex:1;font-size:.68rem;padding:6px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border-hi);color:var(--text);outline:none;"/>
-      <button onclick="savePostLink('task','${task.id}',document.getElementById('ntlink-${task.id}').value)"
-        style="font-size:.62rem;padding:5px 12px;border-radius:8px;background:var(--blue);border:none;color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Save</button>
-    </div>
-    <div id="ntlink-status-${task.id}" style="font-size:.6rem;color:var(--text-3);margin-top:4px;">${savedLink ? '\u2714 Saved \u2014 I\'ll check engagement in the morning' : ''}</div>
-  </div>`;
+  html += postLinkField(task);
 
   // ── INSTAGRAM DM TASKS ──
   } else if(cat==='content' && t.toLowerCase().includes('dm')){
