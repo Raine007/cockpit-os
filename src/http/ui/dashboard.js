@@ -15,7 +15,7 @@
   // the token already lives in the operator's clipboard / password manager,
   // and the dashboard is admin-only.
   try {
-    const saved = localStorage.getItem('cockpit.token');
+    const saved = localStorage.getItem('_cockpit_admin_token');
     if (saved) tokenInput.value = saved;
     const savedUid = localStorage.getItem('cockpit.uid');
     if (savedUid) uidInput.value = savedUid;
@@ -25,7 +25,7 @@
 
   function persist() {
     try {
-      localStorage.setItem('cockpit.token', tokenInput.value);
+      localStorage.setItem('_cockpit_admin_token', tokenInput.value);
       localStorage.setItem('cockpit.uid', uidInput.value);
     } catch (_) {
       /* ignore */

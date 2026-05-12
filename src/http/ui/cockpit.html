@@ -68,7 +68,11 @@
     'quick_notes','income_log','gum_total','gum_units','gum_log',
     'posted_reels','post_days','caption_draft','cfi_notes',
     'work_schedule','ctask_','rh_balance','seeded_v2',
-    'sol_price_cache','rh_price_cache','price_fetched_at','mission_override_'
+    'sol_price_cache','rh_price_cache','price_fetched_at','mission_override_',
+    // C3: route feedback + post-link writes through backend sync.
+    // These were previously written to Firebase Realtime DB; that backend
+    // was removed but the write call sites were never updated.
+    'feedback_','ntlink_','rplink_','qlink_','rlink_'
   ];
 
   window._shouldSync = function(k){
@@ -2404,7 +2408,7 @@ const QUORA_THREADS=[
    question:'How much does it cost to keep your private pilot\'s license current in the United States?',
    url:'https://www.quora.com/How-much-does-it-cost-to-keep-your-private-pilots-license-current-in-the-United-States',
    answers:6,
-   answer:'Less than getting it, but the costs add up fast if you\'re not strategic about it. Here\'s the actual breakdown:\n\nFAA minimum requirements to stay current:\n\u2022 Flight Review (BFR): every 24 months with a CFI \u2014 typically 1 hr ground + 1 hr flight = $300\u2013$500 depending on your market\n\u2022 To carry passengers: 3 takeoffs and landings in the last 90 days (night currency adds 3 full-stop night landings)\n\u2022 Medical: 3rd class medical every 5 years if under 40, every 2 years if over 40 \u2014 or BasicMed which is a one-time online course + physician visit every 4 years (~$150\u2013$250)\n\nActual recurring costs:\n\u2022 Aircraft rental to stay proficient: $175\u2013$210/hr in high-cost markets (AZ, CA). Flying 2\u20133 hours/month to stay sharp = $350\u2013$630/month\n\u2022 Headset/charts/apps: ForeFlight subscription is $100\u2013$200/yr, which is basically non-negotiable if you\'re flying cross-country\n\u2022 Insurance (if you own): $1,200\u2013$3,000/yr depending on aircraft and experience\n\nBiggest cost lever: join a flying club instead of renting retail. Club rates can be $80\u2013$120/hr vs. $175\u2013$210 at a school \u2014 that\'s a 40\u201350% cut on your biggest recurring expense.\n\nI\'m currently in training at 52 hours in Scottsdale. I put together a guide on the full cost of getting your PPL \u2014 link in my profile if you want the detailed breakdown from someone currently in the process.'},,
+   answer:'Less than getting it, but the costs add up fast if you\'re not strategic about it. Here\'s the actual breakdown:\n\nFAA minimum requirements to stay current:\n\u2022 Flight Review (BFR): every 24 months with a CFI \u2014 typically 1 hr ground + 1 hr flight = $300\u2013$500 depending on your market\n\u2022 To carry passengers: 3 takeoffs and landings in the last 90 days (night currency adds 3 full-stop night landings)\n\u2022 Medical: 3rd class medical every 5 years if under 40, every 2 years if over 40 \u2014 or BasicMed which is a one-time online course + physician visit every 4 years (~$150\u2013$250)\n\nActual recurring costs:\n\u2022 Aircraft rental to stay proficient: $175\u2013$210/hr in high-cost markets (AZ, CA). Flying 2\u20133 hours/month to stay sharp = $350\u2013$630/month\n\u2022 Headset/charts/apps: ForeFlight subscription is $100\u2013$200/yr, which is basically non-negotiable if you\'re flying cross-country\n\u2022 Insurance (if you own): $1,200\u2013$3,000/yr depending on aircraft and experience\n\nBiggest cost lever: join a flying club instead of renting retail. Club rates can be $80\u2013$120/hr vs. $175\u2013$210 at a school \u2014 that\'s a 40\u201350% cut on your biggest recurring expense.\n\nI\'m currently in training at 52 hours in Scottsdale. I put together a guide on the full cost of getting your PPL \u2014 link in my profile if you want the detailed breakdown from someone currently in the process.'},
   {id:'qt6',
    question:'What is the pass rate for the private pilot written exam?',
    url:'https://www.quora.com/What-is-the-pass-rate-for-the-private-pilot-written-exam',
@@ -2472,20 +2476,10 @@ function saveFeedback(id, text){
   const entry = {text: text.trim(), ts: new Date().toISOString()};
   existing.unshift(entry);
   const trimmed = existing.slice(0, 10); // keep last 10 entries
-  ss(key, trimmed);
+  ss(key, trimmed); // ss() now routes feedback_ to backend state via SYNC_KEYS
   // Phase 3: also push feedback to the vault.
   if(typeof postTaskFeedback === 'function') postTaskFeedback(id, text.trim());
-  // Push to Firebase
-  const uid = localStorage.getItem('_cockpit_uid');
-  if(uid && window._fbDB){
-    window._fbDB.ref('users/'+uid+'/task_feedback/'+id).set({
-      entries: trimmed,
-      last_updated: new Date().toISOString(),
-    }).then(()=>toast('Noted \u2714 \u2014 I\'ll factor this in tonight'))
-      .catch(()=>toast('Noted \u2714'));
-  } else {
-    toast('Noted \u2714');
-  }
+  toast('Noted \u2714');
   // Clear input
   const el = document.getElementById('fb-input-'+id);
   if(el){ el.value=''; el.style.height='auto'; }
@@ -2535,32 +2529,14 @@ function savePostLink(type, id, url){
   const localKey = type==='task' ? 'ntlink_'+id
                : type==='reddit_post' ? 'rplink_'+id
                : type[0]+'link_'+id;
-  ss(localKey, url);
+  ss(localKey, url); // ss() now routes link prefixes to backend state via SYNC_KEYS
   const statusId = type==='quora' ? 'qlink-status-'+id
                  : type==='reddit' ? 'rlink-status-'+id
                  : type==='reddit_post' ? 'rplink-status-'+id
                  : 'ntlink-status-'+id;
-  const fbPath = type==='task' ? 'posted_links/tasks/'+id
-               : type==='reddit_post' ? 'posted_links/reddit_posts/'+id
-               : 'posted_links/'+type+'/'+id;
-  const uid = localStorage.getItem('_cockpit_uid');
-  if(uid && window._fbDB){
-    window._fbDB.ref('users/'+uid+'/'+fbPath).set({
-      url: url, type: type, id: id, saved_at: new Date().toISOString(),
-    }).then(()=>{
-      const el = document.getElementById(statusId);
-      if(el) el.textContent = '\u2714 Saved \u2014 I\'ll check engagement in the morning';
-      toast('Link saved \u2014 I\'ll check it tonight');
-    }).catch(()=>{
-      const el = document.getElementById(statusId);
-      if(el) el.textContent = 'Saved locally \u2714';
-      toast('Saved locally');
-    });
-  } else {
-    const el = document.getElementById(statusId);
-    if(el) el.textContent = 'Saved \u2714';
-    toast('Link saved');
-  }
+  const el = document.getElementById(statusId);
+  if(el) el.textContent = 'Saved \u2714';
+  toast('Link saved');
 }
 
 function copyQuoraAnswer(id){
@@ -2697,9 +2673,9 @@ function renderRedditThreads(){
         <button onclick="toggleRedditDone('${t.id}')" style="flex-shrink:0;font-size:.6rem;font-weight:700;padding:5px 10px;border-radius:8px;background:rgba(248,113,113,.12);color:var(--crimson);border:1px solid var(--crimson);cursor:pointer;white-space:nowrap;">Done ✓</button>
       </div>
       <div style="font-size:.62rem;color:var(--text-3);margin-bottom:var(--s2);font-style:italic;">${t.angle||''}</div>
-      <div style="font-size:.65rem;color:var(--text-2);line-height:1.7;background:var(--surface-3);border-radius:8px;padding:8px 10px;margin-bottom:var(--s2);">${t.comment}</div>
+      <div id="rt-comment-${t.id}" style="font-size:.65rem;color:var(--text-2);line-height:1.7;background:var(--surface-3);border-radius:8px;padding:8px 10px;margin-bottom:var(--s2);">${t.comment}</div>
       <div style="display:flex;gap:6px;">
-        <button onclick="navigator.clipboard.writeText(document.querySelector('#rtcard-${t.id} .rt-comment-text')||'').then(()=>toast('Comment copied'))" style="font-size:.6rem;padding:4px 10px;border-radius:8px;background:var(--surface-3);border:1px solid var(--border);color:var(--text-2);cursor:pointer;" onclick="copyRTComment('${t.id}')">Copy Comment</button>
+        <button onclick="navigator.clipboard.writeText(document.getElementById('rt-comment-${t.id}').textContent).then(()=>toast('Comment copied'))" style="font-size:.6rem;padding:4px 10px;border-radius:8px;background:var(--surface-3);border:1px solid var(--border);color:var(--text-2);cursor:pointer;">Copy Comment</button>
         <a href="${t.url}" target="_blank" style="font-size:.6rem;color:var(--blue);text-decoration:none;background:var(--surface-3);padding:4px 10px;border-radius:8px;border:1px solid var(--border);">Open Thread ↗</a>
       </div>
       ${feedbackBlock(t.id)}
@@ -3352,13 +3328,11 @@ function showSyncPanel(){
 function hideSyncPanel(){
   document.getElementById('sync-panel').style.display = 'none';
 }
-function copySyncID(){
-  const uid = localStorage.getItem('_cockpit_uid') || '';
-  navigator.clipboard.writeText(uid).then(()=>toast('Sync ID copied!')).catch(()=>{
-    const el = document.getElementById('sync-uid-display');
-    el.select(); document.execCommand('copy'); toast('Sync ID copied!');
-  });
-}
+// C4: copySyncID is defined at the top of the file (~line 204) where it
+// reads from the sync-uid-display input — the same input showSyncPanel()
+// populates with the backend origin. A duplicate definition here previously
+// read from localStorage._cockpit_uid which never matched what the user saw
+// in the panel.
 function pairDevice(){
   // Cross-device sync is now handled via the shared Cockpit backend.
   // All devices that share the same admin token and connect to the same
