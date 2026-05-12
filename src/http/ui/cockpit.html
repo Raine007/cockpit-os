@@ -993,28 +993,11 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
   </div>
 
   <!-- Live accounts -->
-  <div class="card">
+  <div class="card" id="cash-accounts-card">
     <div class="accent-bar ab-silver"></div>
-    <div class="card-title">Cash Accounts — Plaid (Apr 28)</div>
-    <div class="ledger">
-      <div class="ledger-row"><span class="ledger-label">Cap One Savings — Truck Fund</span><span class="ledger-amt">$1,074.98</span></div>
-      <div class="ledger-row"><span class="ledger-label">Firefighters Checking</span><span class="ledger-amt">$194.61</span></div>
-      <div class="ledger-row"><span class="ledger-label">Cap One Checking</span><span class="ledger-amt">$683.49</span></div>
-      <div class="ledger-row"><span class="ledger-label">Firefighters Savings</span><span class="ledger-amt">$10.01</span></div>
-      <div class="ledger-row" style="padding-top:var(--s3);">
-        <span style="color:var(--text-2);font-weight:700;font-size:var(--text-xs);">Total Liquid</span>
-        <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:var(--blue);">$1,963.09</span>
-      </div>
-      <div class="ledger-row"><span class="ledger-label" style="color:var(--crimson);">Gemini CC (33.49% APR ⚠)</span><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-xs);color:var(--crimson);">-$588.02</span></div>
-      <div class="ledger-row"><span class="ledger-label" style="color:var(--amber);">Cap One CC</span><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-xs);color:var(--amber);">-$34.32</span></div>
-      <div class="ledger-row" style="background:var(--surface-2);">
-        <span style="color:var(--white);font-weight:700;font-size:var(--text-xs);">Net Liquid</span>
-        <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:var(--green);">$1,340.75</span>
-      </div>
-    </div>
-    <div class="alert-box" style="margin-top:var(--s4);">
-      <div class="alert-box-icon">🔥</div>
-      <div><div class="alert-box-text">Kill the Gemini card FIRST.</div><div class="alert-box-sub">33.49% APR = ~$17/mo in interest for nothing. Wipe it before stacking the truck fund.</div></div>
+    <div class="card-title">Cash Accounts <span id="cash-accounts-asof" style="font-weight:400;color:var(--text-3);font-size:.65rem;margin-left:6px;"></span></div>
+    <div class="ledger" id="cash-accounts-ledger">
+      <div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">Loading balances...</div>
     </div>
   </div>
 
@@ -2221,6 +2204,10 @@ function _doRenderSchedule(){
 // ── MONEY ──
 function renderMoney(){
   renderInvestments();
+  // C6: pull live cash + holdings snapshot from backend state.
+  // Fire-and-forget so the rest of the tab renders immediately; the cash
+  // card shows "Loading balances..." until this resolves.
+  fetchMarketSnapshot();
   const incomeLog=ls('income_log',[]);
   const now=new Date();
   const weekAgo=new Date(now);weekAgo.setDate(weekAgo.getDate()-7);
@@ -2240,6 +2227,81 @@ function renderMoney(){
     `<div class="ledger-row"><span class="ledger-label">${e.note}</span><span class="ledger-amt">+${fmtMoney(e.amt)}</span><span class="ledger-date">${fmtDate(e.date)}</span></div>`
   ).join('')||'<div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">No income logged yet.</div>';
   document.getElementById('money-alert-pill').style.display='flex';
+}
+
+// C6: fetch /api/market/snapshot and render the cash accounts card.
+// Schema (all fields optional, UI degrades gracefully when null):
+//   cash:    [{ label: string, amount: number }]  (negative = liability)
+//   asOf:    ISO timestamp string
+async function fetchMarketSnapshot(){
+  const ledgerEl = document.getElementById('cash-accounts-ledger');
+  const asOfEl = document.getElementById('cash-accounts-asof');
+  if(!ledgerEl) return;
+  const token = getToken();
+  if(!token){
+    ledgerEl.innerHTML = '<div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">Sign in to load balances.</div>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/market/snapshot', { headers:{ 'Authorization':'Bearer '+token }});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const j = await res.json();
+    renderCashAccounts(j.cash, j.asOf);
+    // Stash holdings + sol data for renderInvestments to use.
+    if(Array.isArray(j.holdings)) window._liveHoldings = j.holdings;
+    if(typeof j.sol_price === 'number') { window._liveSolPrice = j.sol_price; }
+    if(typeof j.sol_holdings === 'number') { window._liveSolHoldings = j.sol_holdings; }
+    // Re-render investments so the backend holdings replace the baked constants
+    // on the screen. Live Yahoo prices (LIVE_RH_PRICES) layer on top naturally
+    // since they're independent state.
+    if(typeof renderInvestments === 'function') renderInvestments();
+  } catch(e){
+    ledgerEl.innerHTML = '<div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">Could not load balances. <span style="color:var(--amber);">'+e.message+'</span></div>';
+  }
+}
+
+function renderCashAccounts(cash, asOf){
+  const ledgerEl = document.getElementById('cash-accounts-ledger');
+  const asOfEl = document.getElementById('cash-accounts-asof');
+  if(!ledgerEl) return;
+  if(!Array.isArray(cash) || cash.length === 0){
+    ledgerEl.innerHTML = '<div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">No balance data \u2014 sync pending.<br/><span style="font-size:.62rem;">Seed via <code>PUT /api/state/plaid_balances</code></span></div>';
+    if(asOfEl) asOfEl.textContent = '';
+    return;
+  }
+  const assets = cash.filter(c => Number(c.amount) >= 0);
+  const liabilities = cash.filter(c => Number(c.amount) < 0);
+  const totalLiquid = assets.reduce((s,c)=>s+Number(c.amount||0),0);
+  const totalDebt = liabilities.reduce((s,c)=>s+Number(c.amount||0),0); // already negative
+  const netLiquid = totalLiquid + totalDebt;
+  let html = '';
+  assets.forEach(c => {
+    html += `<div class="ledger-row"><span class="ledger-label">${escapeHtml(c.label||'')}</span><span class="ledger-amt">${fmtMoney(Number(c.amount||0))}</span></div>`;
+  });
+  html += `<div class="ledger-row" style="padding-top:var(--s3);">
+    <span style="color:var(--text-2);font-weight:700;font-size:var(--text-xs);">Total Liquid</span>
+    <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:var(--blue);">${fmtMoney(totalLiquid)}</span>
+  </div>`;
+  liabilities.forEach(c => {
+    const color = Math.abs(Number(c.amount||0)) > 200 ? 'var(--crimson)' : 'var(--amber)';
+    html += `<div class="ledger-row"><span class="ledger-label" style="color:${color};">${escapeHtml(c.label||'')}</span><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-xs);color:${color};">${fmtMoney(Number(c.amount||0))}</span></div>`;
+  });
+  html += `<div class="ledger-row" style="background:var(--surface-2);">
+    <span style="color:var(--white);font-weight:700;font-size:var(--text-xs);">Net Liquid</span>
+    <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:${netLiquid>=0?'var(--green)':'var(--crimson)'};">${fmtMoney(netLiquid)}</span>
+  </div>`;
+  ledgerEl.innerHTML = html;
+  if(asOfEl && asOf){
+    const d = new Date(asOf);
+    if(!isNaN(d.getTime())){
+      const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      asOfEl.textContent = '\u2014 as of '+label;
+    } else {
+      asOfEl.textContent = '';
+    }
+  } else if(asOfEl){
+    asOfEl.textContent = '';
+  }
 }
 
 function logGumroad(){
@@ -2318,18 +2380,30 @@ const RH_HOLDINGS = [
 const RH_TOTAL = 1711.58;
 
 function renderInvestments(){
-  // Use live prices if available, else use baked constants
-  const solPrice=LIVE_SOL_PRICE||86.72;
-  const rhPrices=LIVE_RH_PRICES||{};
+  // C6: holdings now come from the backend snapshot when available
+  // (window._liveHoldings / _liveSolHoldings, populated by fetchMarketSnapshot),
+  // falling back to the baked RH_HOLDINGS / SOL_HOLDINGS constants on first
+  // paint or when the snapshot endpoint is unreachable. Live Yahoo Finance
+  // prices still layer on top via LIVE_RH_PRICES.
+  const holdingsSource = (Array.isArray(window._liveHoldings) && window._liveHoldings.length > 0)
+    ? window._liveHoldings
+    : RH_HOLDINGS;
+  const solHoldings = (typeof window._liveSolHoldings === 'number' && window._liveSolHoldings > 0)
+    ? window._liveSolHoldings
+    : SOL_HOLDINGS;
+  const solPrice = LIVE_SOL_PRICE
+    || (typeof window._liveSolPrice === 'number' ? window._liveSolPrice : 0)
+    || 86.72;
+  const rhPrices = LIVE_RH_PRICES || {};
   // Recalculate RH holdings with live prices
   let rhTotal=0;
-  const liveHoldings=RH_HOLDINGS.map(h=>{
-    const liveP=rhPrices[h.ticker]||h.price;
-    const liveV=parseFloat((h.qty*liveP).toFixed(2));
-    rhTotal+=liveV;
-    return{...h,price:liveP,value:liveV};
+  const liveHoldings = holdingsSource.map(h=>{
+    const liveP = rhPrices[h.ticker] || h.price || 0;
+    const liveV = parseFloat((Number(h.qty||0) * liveP).toFixed(2));
+    rhTotal += liveV;
+    return { ...h, price: liveP, value: liveV };
   });
-  const solVal=parseFloat((SOL_HOLDINGS*solPrice).toFixed(2));
+  const solVal=parseFloat((solHoldings*solPrice).toFixed(2));
   const total=solVal+rhTotal;
   const solEl=document.getElementById('invest-sol-display');
   const rhEl=document.getElementById('invest-rh-display');
@@ -2351,8 +2425,8 @@ function renderInvestments(){
   if(rhBreakdown)rhBreakdown.innerHTML=liveHoldings.map(h=>`
     <div class="ledger-row">
       <span class="ledger-label" style="font-weight:700;color:var(--silver);">${h.ticker}</span>
-      <span style="flex:1;font-size:var(--text-xs);color:var(--text-2);padding-left:var(--s2);">${h.name} · ${h.qty} sh @ $${h.price.toFixed(2)}</span>
-      <span class="ledger-amt">$${h.value.toFixed(2)}</span>
+      <span style="flex:1;font-size:var(--text-xs);color:var(--text-2);padding-left:var(--s2);">${h.name||''} · ${h.qty} sh @ $${(h.price||0).toFixed(2)}</span>
+      <span class="ledger-amt">$${(h.value||0).toFixed(2)}</span>
     </div>`).join('');
   // load CFI notes
   const cfiEl=document.getElementById('cfi-notes');

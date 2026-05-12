@@ -428,6 +428,46 @@ async function handleDeleteState(
   return jsonResponse(200, { ok: true });
 }
 
+/**
+ * GET /api/market/snapshot — aggregated view of the user's live financial
+ * state for the Money tab. Reads five state keys and returns them in one
+ * payload so the front-end only needs one round trip on view-mount.
+ *
+ * State keys (all optional — UI must handle missing values gracefully):
+ *   plaid_balances        — array of { label: string, amount: number }
+ *                           amount > 0 for assets, < 0 for liabilities
+ *   robinhood_holdings    — array of { ticker, name, qty, price?, value? }
+ *   sol_price             — number (USD)
+ *   sol_holdings          — number (SOL units)
+ *   market_snapshot_as_of — ISO timestamp string set by whoever last seeded
+ *                           the above keys (heartbeat-service or manual PUT)
+ *
+ * Until the heartbeat-service is wired up to refresh these nightly, seed
+ * via PUT /api/state/{key} from a script or Cloud Shell.
+ */
+async function handleMarketSnapshot(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const uid = 'default';
+  const [cash, holdings, solPrice, solHoldings, asOf] = await Promise.all([
+    getState(ctx, uid, 'plaid_balances'),
+    getState(ctx, uid, 'robinhood_holdings'),
+    getState(ctx, uid, 'sol_price'),
+    getState(ctx, uid, 'sol_holdings'),
+    getState(ctx, uid, 'market_snapshot_as_of'),
+  ]);
+  return jsonResponse(200, {
+    ok: true,
+    cash: cash ?? null,
+    holdings: holdings ?? null,
+    sol_price: solPrice ?? null,
+    sol_holdings: solHoldings ?? null,
+    asOf: asOf ?? null,
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* Computer offload handler                                                    */
 /* -------------------------------------------------------------------------- */
@@ -1363,6 +1403,12 @@ const STATIC_ROUTES: CockpitRoute[] = [
     path: '/api/dashboard/identities',
     description: 'List identities for a uid',
     handler: handleDashboardIdentities,
+  },
+  {
+    method: 'GET',
+    path: '/api/market/snapshot',
+    description: 'Live cash + holdings + crypto snapshot for the Money tab',
+    handler: handleMarketSnapshot,
   },
   {
     method: 'POST',
