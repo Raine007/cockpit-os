@@ -360,7 +360,10 @@ img,svg{display:block;max-width:100%;}
 ::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:99px;}
 
 /* ── LAYOUT ── */
-.app{max-width:480px;margin:0 auto;padding:var(--s4) var(--s5);padding-top:calc(var(--s4)+env(safe-area-inset-top));}
+/* M6: padding-top is just var(--s4) here. The notch offset is already
+   applied to body via padding-top:env(safe-area-inset-top), so adding it
+   again on .app stacked the offset twice on notched iPhones. */
+.app{max-width:480px;margin:0 auto;padding:var(--s4) var(--s5);}
 
 /* ── NAV ── */
 .nav-tabs{
