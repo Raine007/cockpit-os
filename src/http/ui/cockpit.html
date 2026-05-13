@@ -3361,6 +3361,11 @@ if(typeof window._updateSyncDot === 'undefined'){
 // Backend sync (pull state + start polling) is kicked off by the
 // Cockpit Backend Sync Layer script above via its own DOMContentLoaded handler.
 document.addEventListener('DOMContentLoaded',()=>{
+  // M4: seed composer mode from the active tab in the DOM. Previously this
+  // was only set on the first tab click, which broke silently if the active
+  // tab class was reordered (submitComposer fell back to 'chat' regardless).
+  const activeTab = document.querySelector('.composer-tab.active');
+  window._composerMode = (activeTab && activeTab.dataset.mode) || 'chat';
   renderToday();
   renderSchedule();
   renderContent();
