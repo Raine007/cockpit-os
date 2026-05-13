@@ -162,8 +162,8 @@ gcloud run deploy "$SERVICE" \
   --port=8080 \
   --cpu=1 \
   --memory=512Mi \
-  --min-instances=0 \
-  --max-instances=10 \
+  --min-instances=1 \
+  --max-instances=1 \
   --concurrency=80 \
   --timeout=60s \
   --set-env-vars="FIREBASE_PROJECT_ID=$PROJECT_ID,COCKPIT_LOG_LEVEL=info" \
