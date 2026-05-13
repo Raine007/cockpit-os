@@ -2171,31 +2171,31 @@ async function fetchLivePrices(){
   const cacheAge=PRICE_LAST_FETCHED?now-PRICE_LAST_FETCHED:Infinity;
   // Refresh if cache older than 15 minutes
   if(cacheAge<15*60*1000)return;
+  // H8: single fetch to /api/market/prices instead of direct calls to
+  // CoinGecko + Yahoo Finance from the browser. Backend handles caching,
+  // CORS, and shields Raine's IP from rate limits.
+  const tickers=['XOM','MO','SHLD','BA','OKLO','COKE'];
   try{
-    // SOL via CoinGecko (free, no key)
-    const res=await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',{cache:'no-store'});
-    if(res.ok){
-      const d=await res.json();
-      if(d.solana&&d.solana.usd){
-        LIVE_SOL_PRICE=d.solana.usd;
-        ss('sol_price_cache',LIVE_SOL_PRICE);
-      }
+    const token=getToken();
+    if(!token) return;
+    const q='tickers='+encodeURIComponent(tickers.join(','))+'&crypto=solana';
+    const res=await fetch('/api/market/prices?'+q,{
+      headers:{ 'Authorization':'Bearer '+token },
+      cache:'no-store',
+    });
+    if(!res.ok) return;
+    const d=await res.json();
+    if(d.crypto && typeof d.crypto.solana==='number'){
+      LIVE_SOL_PRICE=d.crypto.solana;
+      ss('sol_price_cache',LIVE_SOL_PRICE);
     }
-  }catch(e){/* offline — use cache */}
-  try{
-    // Stock prices via Yahoo Finance unofficial quote endpoint (no key needed)
-    const tickers=['XOM','MO','SHLD','BA','OKLO','COKE'];
-    const prices={};
-    await Promise.all(tickers.map(async t=>{
-      try{
-        const r=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${t}?interval=1d&range=1d`,{cache:'no-store'});
-        if(r.ok){const d=await r.json();const p=d?.chart?.result?.[0]?.meta?.regularMarketPrice;if(p)prices[t]=p;}
-      }catch{}
-    }));
-    if(Object.keys(prices).length>0){LIVE_RH_PRICES=prices;ss('rh_price_cache',prices);}
-  }catch(e){}
-  ss('price_fetched_at',now);PRICE_LAST_FETCHED=now;
-  renderInvestments();
+    if(d.stocks && Object.keys(d.stocks).length>0){
+      LIVE_RH_PRICES=d.stocks;
+      ss('rh_price_cache',d.stocks);
+    }
+    ss('price_fetched_at',now);PRICE_LAST_FETCHED=now;
+    renderInvestments();
+  }catch(e){/* offline — use whatever's in localStorage cache */}
 }
 // Robinhood live data — pulled from Plaid Apr 26 2026
 const RH_HOLDINGS = [

@@ -466,6 +466,135 @@ async function handleMarketSnapshot(
   });
 }
 
+/**
+ * GET /api/market/prices?tickers=AAPL,MO,XOM&crypto=solana
+ *
+ * Server-side proxy for live price data (H8). Previously the front-end
+ * called Yahoo Finance and CoinGecko directly from the browser, which:
+ *  - hit rate limits against Raine's IP, not the server's
+ *  - broke silently on CORS changes from either provider
+ *  - leaked the request fingerprint of "user is checking their portfolio"
+ *
+ * Cache: in-memory, 60s TTL. Survives only the lifetime of one Cloud Run
+ * instance, which is fine — at M9's --max-instances=1 there's only one,
+ * and a cold start re-fetches anyway. No Firestore round-trip needed.
+ *
+ * Failure mode: if either upstream is down or rate-limited, we return
+ * whatever we cached most recently with `stale: true`. Client decides
+ * whether to surface the staleness.
+ */
+// fetch and AbortSignal are globals in Node 20+ runtime but not declared
+// because the repo lacks @types/node. Declare locally to keep typecheck
+// happy without taking on a global dependency.
+declare const fetch: (url: string, init?: { signal?: unknown }) => Promise<{
+  ok: boolean;
+  json(): Promise<unknown>;
+}>;
+declare const AbortSignal: { timeout(ms: number): unknown };
+
+type MarketPricesCache = {
+  ts: number;
+  stocks: Record<string, number>;
+  crypto: Record<string, number>;
+};
+let _marketPricesCache: MarketPricesCache | null = null;
+const MARKET_PRICES_TTL_MS = 60_000;
+
+async function fetchStockPrice(ticker: string): Promise<number | null> {
+  try {
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!r.ok) return null;
+    const d = (await r.json()) as {
+      chart?: { result?: Array<{ meta?: { regularMarketPrice?: number } }> };
+    };
+    return d.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchCryptoPrice(coinId: string): Promise<number | null> {
+  try {
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coinId)}&vs_currencies=usd`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!r.ok) return null;
+    const d = (await r.json()) as Record<string, { usd?: number }>;
+    return d[coinId]?.usd ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function handleMarketPrices(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+
+  // Parse ticker list and crypto list from query
+  const rawTickers = (req.query?.tickers ?? '').trim();
+  const rawCrypto = (req.query?.crypto ?? 'solana').trim();
+  const tickers = rawTickers
+    ? rawTickers.split(',').map((t) => t.trim().toUpperCase()).filter(Boolean).slice(0, 25)
+    : [];
+  const cryptos = rawCrypto
+    ? rawCrypto.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean).slice(0, 10)
+    : [];
+
+  const now = Date.now();
+  if (_marketPricesCache && now - _marketPricesCache.ts < MARKET_PRICES_TTL_MS) {
+    return jsonResponse(200, {
+      ok: true,
+      stocks: _marketPricesCache.stocks,
+      crypto: _marketPricesCache.crypto,
+      fetched_at: new Date(_marketPricesCache.ts).toISOString(),
+      cached: true,
+    });
+  }
+
+  // Fan-out fetch
+  const stockResults = await Promise.all(
+    tickers.map(async (t) => [t, await fetchStockPrice(t)] as const),
+  );
+  const cryptoResults = await Promise.all(
+    cryptos.map(async (c) => [c, await fetchCryptoPrice(c)] as const),
+  );
+
+  const stocks: Record<string, number> = {};
+  for (const [t, p] of stockResults) if (p !== null) stocks[t] = p;
+  const crypto: Record<string, number> = {};
+  for (const [c, p] of cryptoResults) if (p !== null) crypto[c] = p;
+
+  // If we got NOTHING but have a stale cache, serve stale rather than empty
+  if (
+    Object.keys(stocks).length === 0 &&
+    Object.keys(crypto).length === 0 &&
+    _marketPricesCache
+  ) {
+    return jsonResponse(200, {
+      ok: true,
+      stocks: _marketPricesCache.stocks,
+      crypto: _marketPricesCache.crypto,
+      fetched_at: new Date(_marketPricesCache.ts).toISOString(),
+      cached: true,
+      stale: true,
+    });
+  }
+
+  _marketPricesCache = { ts: now, stocks, crypto };
+  return jsonResponse(200, {
+    ok: true,
+    stocks,
+    crypto,
+    fetched_at: new Date(now).toISOString(),
+    cached: false,
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* Computer offload handler                                                    */
 /* -------------------------------------------------------------------------- */
@@ -1419,6 +1548,12 @@ const STATIC_ROUTES: CockpitRoute[] = [
     path: '/api/market/snapshot',
     description: 'Live cash + holdings + crypto snapshot for the Money tab',
     handler: handleMarketSnapshot,
+  },
+  {
+    method: 'GET',
+    path: '/api/market/prices',
+    description: 'Server-side proxy for Yahoo Finance + CoinGecko live prices (60s cache)',
+    handler: handleMarketPrices,
   },
   {
     method: 'POST',
