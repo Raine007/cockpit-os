@@ -54,7 +54,7 @@
       try {
         const test = await fetch('/api/state', { headers:{ 'Authorization':'Bearer '+v }});
         if(!test.ok){ err.textContent = 'Invalid token (HTTP '+test.status+')'; return; }
-        localStorage.setItem('_cockpit_admin_token', v);
+        setToken(v);
         try { sessionStorage.removeItem('_cockpit_auth_dismissed'); } catch(_){}
         m.remove();
         hideAuthBanner();
@@ -93,14 +93,21 @@
   }
   window._cockpitHideAuthBanner = hideAuthBanner;
 
+  // Token helpers (M1) — consolidates 16 inline `localStorage.getItem(...)`
+  // reads, 1 inline setItem write, and 12 raw Authorization header builds.
+  // All callers handle the "no token" case themselves (return silent for
+  // background paths, toast for user-triggered actions). The auth modal is
+  // shown via window._cockpitShowAuthModal at the entry points that need it.
+  const TOKEN_KEY = '_cockpit_admin_token';
   function getToken(){
-    let t = localStorage.getItem('_cockpit_admin_token');
-    if(!t){
-      // Show inline modal instead of prompt() — works on iOS Safari
-      showAuthModal();
-      return '';
-    }
-    return (t||'').trim();
+    try { return (localStorage.getItem(TOKEN_KEY) || '').trim(); }
+    catch(_) { return ''; }
+  }
+  function setToken(t){
+    try { localStorage.setItem(TOKEN_KEY, t); } catch(_) {}
+  }
+  function apiHeaders(){
+    return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' };
   }
   window._cockpitShowAuthModal = showAuthModal;
 
@@ -130,7 +137,7 @@
       try {
         await fetch('/api/state/' + encodeURIComponent(k), {
           method: 'PUT',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          headers: apiHeaders(),
           body: JSON.stringify({ value: v })
         });
       } catch(e){ console.warn('[Cockpit Sync] write failed', k, e); }
@@ -142,7 +149,7 @@
   window._fbRead  = function(k,cb){
     const token = getToken();
     if(!token) return;
-    fetch('/api/state/'+encodeURIComponent(k), { headers:{ 'Authorization':'Bearer '+token }})
+    fetch('/api/state/'+encodeURIComponent(k), { headers:apiHeaders()})
       .then(r=>r.json())
       .then(j=>{ if(j.ok && j.value !== null) cb(j.value); })
       .catch(()=>{});
@@ -159,7 +166,7 @@
     const token = getToken();
     if(!token) return;
     try {
-      const res = await fetch('/api/state', { headers:{ 'Authorization':'Bearer '+token }});
+      const res = await fetch('/api/state', { headers:apiHeaders()});
       const j = await res.json();
       if(!j.ok) return;
       const state = j.state || {};
@@ -182,10 +189,10 @@
   // Background poll every 30s — pick up changes from other devices
   function _startPolling(){
     setInterval(async function(){
-      const token = localStorage.getItem('_cockpit_admin_token');
+      const token = getToken();
       if(!token) return;
       try {
-        const res = await fetch('/api/state', { headers:{ 'Authorization':'Bearer '+token }});
+        const res = await fetch('/api/state', { headers:apiHeaders()});
         const j = await res.json();
         if(!j.ok) return;
         const state = j.state || {};
@@ -247,10 +254,10 @@
 
   // Offload polling: update the offload status indicator every 30s
   async function _pollOffloads(){
-    const token = localStorage.getItem('_cockpit_admin_token');
+    const token = getToken();
     if(!token) return;
     try {
-      const res = await fetch('/api/dashboard/jobs', { headers:{ 'Authorization':'Bearer '+token }});
+      const res = await fetch('/api/dashboard/jobs', { headers:apiHeaders()});
       const j = await res.json();
       if(!j.ok) return;
       const pending = (j.histogram && j.histogram.queued) || 0;
@@ -261,7 +268,7 @@
 
   // Boot: if no token, show modal immediately; otherwise pull state
   window.addEventListener('DOMContentLoaded', function(){
-    const tok = localStorage.getItem('_cockpit_admin_token');
+    const tok = getToken();
     if(!tok){
       showAuthModal();
     } else {
@@ -282,7 +289,7 @@
     try {
       const res = await fetch('/api/computer/offload', {
         method: 'POST',
-        headers: { 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify({ title: desc.trim(), instructions: desc.trim() })
       });
       const j = await res.json();
@@ -1274,11 +1281,6 @@ let _chatPollTimer = null;
 let _feedbackRequests = [];
 let _feedbackPollTimer = null;
 
-function _chatApiHeaders(){
-  const token = localStorage.getItem('_cockpit_admin_token') || '';
-  return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
-}
-
 function _buildChatRows(msgs, list){
   list.innerHTML = '';
   const items = msgs || [];
@@ -1353,7 +1355,7 @@ async function sendChatMessage(tab){
   input.value = '';
   const legacy = document.getElementById('chat-input-today');
   if(legacy && legacy !== input) legacy.value = '';
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   // Build tab_context snapshot from localStorage
   let tab_context = null;
@@ -1377,7 +1379,7 @@ async function sendChatMessage(tab){
   try {
     const res = await fetch('/api/chat/message', {
       method: 'POST',
-      headers: _chatApiHeaders(),
+      headers: apiHeaders(),
       body: JSON.stringify({ text: text, role: 'user', context_tab: tab||'today', tab_context: tab_context })
     });
     const j = await res.json();
@@ -1393,11 +1395,11 @@ async function sendChatMessage(tab){
 }
 
 async function _pollChatMessages(){
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token) return;
   try {
     const params = _chatLastTs ? '?since=' + encodeURIComponent(_chatLastTs) : '';
-    const res = await fetch('/api/chat/messages' + params, { headers: _chatApiHeaders() });
+    const res = await fetch('/api/chat/messages' + params, { headers: apiHeaders() });
     const j = await res.json();
     if(!j.ok) return;
     const msgs = j.messages || [];
@@ -1421,7 +1423,7 @@ async function _pollChatMessages(){
       }
     }
     // Also poll pending jobs for typing indicator
-    const pendRes = await fetch('/api/chat/pending', { headers: _chatApiHeaders() });
+    const pendRes = await fetch('/api/chat/pending', { headers: apiHeaders() });
     const pendJ = await pendRes.json();
     window._chatPendingJobs = pendJ.ok ? pendJ.jobs : [];
     _updateChatTypingIndicator();
@@ -1478,12 +1480,12 @@ async function submitFeedbackAnswer(feedbackId){
   const ansInput = document.getElementById('fb-ans-' + feedbackId);
   const answer = (ansInput ? ansInput.value : '').trim();
   if(!answer){ toast('Please enter an answer'); return; }
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   try {
     const res = await fetch('/api/feedback/answer', {
       method: 'POST',
-      headers: _chatApiHeaders(),
+      headers: apiHeaders(),
       body: JSON.stringify({ feedback_id: feedbackId, answer: answer })
     });
     const j = await res.json();
@@ -1500,10 +1502,10 @@ async function submitFeedbackAnswer(feedbackId){
 }
 
 async function _pollFeedback(){
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token) return;
   try {
-    const res = await fetch('/api/feedback/pending', { headers: _chatApiHeaders() });
+    const res = await fetch('/api/feedback/pending', { headers: apiHeaders() });
     const j = await res.json();
     if(!j.ok) return;
     _feedbackRequests = j.feedback_requests || [];
@@ -1526,7 +1528,7 @@ window.addEventListener('DOMContentLoaded', function(){
   _chatPollTimer = setInterval(_pollChatMessages, 3000);
   _feedbackPollTimer = setInterval(_pollFeedback, 5000);
   // First immediate fetch if authenticated
-  const tok = localStorage.getItem('_cockpit_admin_token');
+  const tok = getToken();
   if(tok){
     _pollChatMessages();
     _pollFeedback();
@@ -1591,9 +1593,9 @@ function adaptServerTask(t){
 
 async function loadTasksFromAPI(){
   try{
-    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    const tok = getToken();
     if(!tok) return false;
-    const res = await fetch('/api/tasks/all', { headers:{ 'Authorization': 'Bearer '+tok } });
+    const res = await fetch('/api/tasks/all', { headers:apiHeaders() });
     if(!res.ok){ console.warn('loadTasks: HTTP', res.status); return false; }
     const data = await res.json();
     const list = (data && Array.isArray(data.tasks)) ? data.tasks : [];
@@ -1612,12 +1614,12 @@ async function loadTasksFromAPI(){
 
 async function postTaskDone(taskId){
   try{
-    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    const tok = getToken();
     if(!tok) return false;
     const today = todayKey();
     await fetch('/api/tasks/'+encodeURIComponent(taskId)+'/done', {
       method:'POST',
-      headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':'application/json' },
+      headers:apiHeaders(),
       body: JSON.stringify({ completed_on: today }),
     });
     return true;
@@ -1627,11 +1629,11 @@ async function postTaskDone(taskId){
 async function postTaskFeedback(taskId, text){
   if(!text || !text.trim()) return false;
   try{
-    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    const tok = getToken();
     if(!tok) return false;
     const res = await fetch('/api/tasks/'+encodeURIComponent(taskId)+'/feedback', {
       method:'POST',
-      headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':'application/json' },
+      headers:apiHeaders(),
       body: JSON.stringify({ author: 'raine', text: text.trim() }),
     });
     if(res.ok){ loadTasksFromAPI(); return true; }
@@ -2010,13 +2012,13 @@ async function addQuickNote(){
   if(legacy) legacy.value='';
   renderQuickNotes();
   // Stream into OpenClaw — same channel as chat
-  const token=localStorage.getItem('_cockpit_admin_token')||'';
+  const token=getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   const msg='[note] '+text;
   try {
     const res=await fetch('/api/chat/message',{
       method:'POST',
-      headers:_chatApiHeaders(),
+      headers:apiHeaders(),
       body:JSON.stringify({ text:msg, role:'user', context_tab:'today', tab_context:{ is_note:true, category:cat } })
     });
     const j=await res.json();
@@ -3053,7 +3055,7 @@ async function sendTaskFeedback(taskId){
   // Phase 3: tasks come from the vault. Adapt shape — title/tags instead of content/project.
   const task = (TODOIST_TASKS||[]).find(x=>x.id===taskId);
   if(!task){ toast('Task not found'); return; }
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   // Push the feedback to the vault first so it's preserved as a permanent record.
   if(typeof postTaskFeedback === 'function') postTaskFeedback(taskId, text);
@@ -3075,7 +3077,7 @@ async function sendTaskFeedback(taskId){
   try {
     const res = await fetch('/api/chat/message', {
       method: 'POST',
-      headers: _chatApiHeaders(),
+      headers: apiHeaders(),
       body: JSON.stringify({ text: msg, role: 'user', context_tab: 'today', tab_context: tab_context })
     });
     const j = await res.json();
@@ -3394,9 +3396,6 @@ document.addEventListener('DOMContentLoaded',()=>{
 -->
 <script>
 (function(){
-  function getToken(){
-    try { return localStorage.getItem('_cockpit_admin_token') || ''; } catch(_) { return ''; }
-  }
   function setPill(color, lines){
     var dot = document.getElementById('vault-dot');
     var btn = document.getElementById('vault-btn');
@@ -3413,7 +3412,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       return;
     }
     try {
-      var res = await fetch('/api/vault/status', { headers: { 'Authorization': 'Bearer ' + token }});
+      var res = await fetch('/api/vault/status', { headers: apiHeaders()});
       if(!res.ok){
         setPill('var(--text-3)', ['Vault status: HTTP ' + res.status]);
         return;
