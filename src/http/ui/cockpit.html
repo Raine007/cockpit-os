@@ -230,7 +230,6 @@
         if(typeof renderMoney==='function') renderMoney();
         if(typeof renderInvestments==='function') renderInvestments();
       }
-      if(k==='work_schedule'){ if(typeof renderSchedule==='function') renderSchedule(); }
       if(k==='posted_reels'||k==='post_days'||k.startsWith('ctask_')){
         if(typeof renderContent==='function') renderContent();
       }
@@ -573,21 +572,6 @@ img,svg{display:block;max-width:100%;}
 .ledger-date{color:var(--text-3);font-size:.6rem;}
 
 /* ── SCHEDULE ── */
-.time-block{display:flex;align-items:center;gap:var(--s4);padding:var(--s4) 0;border-bottom:1px solid var(--border);transition:all var(--ease);}
-.time-block:last-child{border-bottom:none;}
-.time-block.current .tb-label{color:var(--blue);}
-.time-block.past{opacity:0.3;}
-.tb-icon{font-size:1.1rem;flex-shrink:0;width:24px;text-align:center;}
-.tb-body{flex:1;}
-.tb-label{font-size:var(--text-sm);font-weight:600;color:var(--text);}
-.tb-note{font-size:var(--text-xs);color:var(--text-3);margin-top:2px;}
-.tb-time{font-family:'DM Mono',monospace;font-size:.62rem;color:var(--text-3);text-align:right;flex-shrink:0;}
-.time-block.current .tb-time{color:var(--blue);}
-.day-bar{height:2px;border-radius:99px;background:var(--surface-3);overflow:hidden;margin-bottom:var(--s5);}
-.day-bar-fill{height:100%;border-radius:99px;background:var(--blue);transition:width 1s ease;}
-.guardrail{display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-radius:var(--r-md);background:var(--crimson-dim);border:1px solid rgba(248,113,113,.2);margin-bottom:var(--s4);font-size:var(--text-sm);font-weight:600;color:var(--crimson);}
-.guardrail.warn{background:var(--amber-dim);border-color:rgba(251,191,36,.2);color:var(--amber);}
-.guardrail.hidden{display:none;}
 
 /* ── INPUT / FORM ── */
 .input-row{display:flex;gap:var(--s2);margin-top:var(--s3);}
@@ -766,27 +750,7 @@ textarea.note-area::placeholder{color:var(--text-3);}
 button,a,[role=button]{min-height:44px;min-width:44px;}
 .pill,.ledger-row,.task-chip-check,.btn-sm{min-height:unset;min-width:unset;}
 
-/* ── NEXT TASK CARD ── */
-#next-task-card{
-  background:linear-gradient(135deg,var(--surface) 0%,var(--surface-2) 100%);
-}
-#next-task-title{font-size:1.25rem;font-weight:700;color:var(--text);line-height:1.3;letter-spacing:-.025em;}
-#next-task-how{
-  font-size:var(--text-xs);color:var(--text-2);line-height:1.65;
-  background:var(--surface-3);border-radius:var(--r-md);
-  padding:var(--s3) var(--s4);margin-bottom:var(--s4);
-  display:none;
-}
-#next-task-done-btn{
-  flex:1;padding:var(--s3) var(--s4);border-radius:var(--r-md);
-  background:var(--blue);color:#000;font-weight:700;
-  font-size:var(--text-sm);min-height:44px;
-}
-#next-task-later-btn{
-  flex:1;padding:var(--s3) var(--s4);border-radius:var(--r-md);
-  background:var(--surface-2);color:var(--text-2);
-  font-weight:600;font-size:var(--text-sm);min-height:44px;
-}
+/* ── TASK ACTION PANEL (rendered inside expanded task cards) ── */
 .nt-section-label{
   font-size:.58rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
   color:var(--blue);margin-bottom:6px;margin-top:var(--s3);
@@ -947,34 +911,6 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     </div>
   </section>
 
-  <!-- ── Hidden compatibility stubs (don't remove — referenced by existing JS) ── -->
-  <div style="display:none;" aria-hidden="true">
-    <span id="mission-work-tag"></span>
-    <span id="mission-text"></span>
-    <span id="mission-notes"></span>
-    <span id="mission-icon"></span>
-    <span id="mission-label"></span>
-    <button id="mission-btn"></button>
-    <span id="streak-count">0</span>
-    <div id="urgent-card"><div id="urgent-list"></div></div>
-    <div id="next-task-card">
-      <span id="next-task-list-pill"></span>
-      <div id="next-task-title"></div>
-      <div id="next-task-how"></div>
-      <button id="next-task-done-btn"></button>
-      <button id="next-task-later-btn"></button>
-      <div id="next-task-empty"></div>
-    </div>
-    <span id="sched-time-pill"></span>
-    <span id="day-progress"></span>
-    <div id="guardrail"></div>
-    <div id="sched-blocks"></div>
-    <span id="snap-invest"></span>
-    <span id="snap-gumroad">0</span>
-    <span id="snap-fund-cur">$1,075</span>
-    <span id="snap-fund-bar"></span>
-  </div>
-
   <!-- QUICK NOTES (list only — input merged into bottom composer) -->
   <div class="card" id="quick-notes-card" style="display:none;">
     <div class="accent-bar ab-amber"></div>
@@ -1070,13 +1006,6 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
 
   <!-- ── FEEDBACK BANNER (today) ── -->
   <div class="feedback-banner" id="feedback-banner-today" style="display:none;"></div>
-
-  <!-- legacy ids kept for compatibility — live composer is the OpenClaw stream up top -->
-  <div style="display:none;" aria-hidden="true">
-    <textarea id="chat-input-today"></textarea>
-    <input type="text" id="quick-note-input"/>
-    <div id="composer-notes-list"></div>
-  </div>
 </div>
 
 <!-- ══ MONEY ══ -->
@@ -1295,7 +1224,7 @@ function switchView(name,btn){
   document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   btn.classList.add('active');
-  if(name==='today'){ renderSchedule(); renderContent(); renderDiscipline(); }
+  if(name==='today'){ renderContent(); renderDiscipline(); }
   if(name==='money')renderMoney();
   // Render chat messages to all lists and scroll the active tab's chat to bottom
   renderChatMessages(_chatMessages);
@@ -1377,7 +1306,7 @@ async function sendChatMessage(tab){
   // Today uses unified composer (#composer-input); money/flight still use #chat-input-<tab>
   let input;
   if((tab||'today') === 'today'){
-    input = document.getElementById('composer-input') || document.getElementById('chat-input-today');
+    input = document.getElementById('composer-input');
   } else {
     input = document.getElementById('chat-input-' + tab);
   }
@@ -1385,8 +1314,6 @@ async function sendChatMessage(tab){
   const text = (input.value||'').trim();
   if(!text) return;
   input.value = '';
-  const legacy = document.getElementById('chat-input-today');
-  if(legacy && legacy !== input) legacy.value = '';
   const token = getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   // Build tab_context snapshot from localStorage
@@ -1935,84 +1862,6 @@ function buildTaskActionPanel(task){
   return html;
 }
 
-function renderNextTask(){
-  const card = document.getElementById('next-task-card');
-  const titleEl = document.getElementById('next-task-title');
-  const howEl = document.getElementById('next-task-how');
-  const pillEl = document.getElementById('next-task-list-pill');
-  const doneBtn = document.getElementById('next-task-done-btn');
-  const laterBtn = document.getElementById('next-task-later-btn');
-  const emptyEl = document.getElementById('next-task-empty');
-  if(!card) return;
-
-  const task = getNextTask();
-  if(!task){
-    titleEl.style.display='none';
-    howEl.style.display='none';
-    if(pillEl) pillEl.style.display='none';
-    if(doneBtn) doneBtn.style.display='none';
-    if(laterBtn) laterBtn.style.display='none';
-    if(emptyEl) emptyEl.style.display='block';
-    const bar = card.querySelector('.accent-bar');
-    if(bar){bar.className='accent-bar ab-green';}
-    return;
-  }
-
-  if(emptyEl) emptyEl.style.display='none';
-  if(doneBtn) doneBtn.style.display='';
-  if(laterBtn) laterBtn.style.display='';
-
-  // Title
-  titleEl.style.display='block';
-  titleEl.innerHTML = (task.urgent ? '<span style="color:var(--crimson);font-size:.6rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:6px;">URGENT</span>' : '') + task.title;
-
-  // Accent bar
-  const bar = card.querySelector('.accent-bar');
-  if(bar){ bar.className = 'accent-bar ' + (task.urgent ? 'ab-crimson' : 'ab-blue'); }
-
-  // Action panel — replaces plain notes blob
-  const panel = buildTaskActionPanel(task);
-  if(panel){
-    howEl.style.display='block';
-    howEl.style.background='transparent';
-    howEl.style.border='none';
-    howEl.style.padding='0';
-    howEl.style.borderLeft='none';
-    howEl.innerHTML = panel;
-  } else {
-    howEl.style.display='none';
-  }
-
-  // List pill
-  if(pillEl){ pillEl.textContent = task.list || task.cat; pillEl.style.display='inline-flex'; }
-
-  if(doneBtn){ doneBtn.style.background='var(--blue)'; doneBtn.style.color='#000'; }
-}
-
-function markNextTaskDone(){
-  const task = getNextTask();
-  if(!task) return;
-  const today = todayKey();
-  const done = ls('tasks_done_'+today, {});
-  done[task.id] = true;
-  ss('tasks_done_'+today, done);
-  toast('Done — +'+task.pts+'pts 🔥');
-  renderNextTask();
-  renderDiscipline();
-  renderToday();
-}
-
-function snoozeNextTask(){
-  const task = getNextTask();
-  if(!task) return;
-  const today = todayKey();
-  const snoozed = ls('tasks_snoozed_'+today, []);
-  if(!snoozed.includes(task.id)) snoozed.push(task.id);
-  ss('tasks_snoozed_'+today, snoozed);
-  toast('Pushed to later. Next task loading...');
-  renderNextTask();
-}
-
 // ── QUICK NOTES ──
 const NOTE_CATS=[
   {label:'Content',keywords:['reel','post','caption','video','instagram','reddit','quora','tiktok','edit','footage']},
@@ -2030,10 +1879,8 @@ function categorizeNote(text){
 }
 async function addQuickNote(){
   const composer=document.getElementById('composer-input');
-  const legacy=document.getElementById('quick-note-input');
   let text='';
   if(composer && (composer.value||'').trim()) text=composer.value.trim();
-  else if(legacy && (legacy.value||'').trim()) text=legacy.value.trim();
   if(!text) return;
   const cat=categorizeNote(text);
   // Local log for offline/category continuity
@@ -2041,7 +1888,6 @@ async function addQuickNote(){
   notes.unshift({id:Date.now(),text,cat,date:todayKey(),done:false,gtask_synced:false});
   ss('quick_notes',notes);
   if(composer) composer.value='';
-  if(legacy) legacy.value='';
   renderQuickNotes();
   // Stream into OpenClaw — same channel as chat
   const token=getToken();
@@ -2168,64 +2014,7 @@ function getMission(){
 function renderToday(){
   const now=new Date();
   document.getElementById('header-date').textContent=now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-
-  // Mission — pulled from real Google Tasks
-  const {text:missionText,isWork,taskId,list:mList,notes:mNotes,urgent:mUrgent}=getMission();
-  document.getElementById('mission-text').textContent=missionText;
-  const workTag=document.getElementById('mission-work-tag');
-  if(workTag){
-    if(isWork){workTag.textContent='💼 Work day';workTag.style.display='inline-flex';}
-    else if(mUrgent){workTag.textContent='Urgent';workTag.style.background='var(--crimson-dim)';workTag.style.color='var(--crimson)';workTag.style.display='inline-flex';}
-    else{workTag.textContent=mList||'📋 Task';workTag.style.display='inline-flex';}
-  }
-  // Show task notes if available
-  const mNotesEl=document.getElementById('mission-notes');
-  if(mNotesEl){mNotesEl.textContent=mNotes||'';mNotesEl.style.display=mNotes?'block':'none';}
-  const isDone=ls('mission_done_day','')===todayKey();
-  const btn=document.getElementById('mission-btn');
-  btn.className='mission-check-btn'+(isDone?' done':'');
-  document.getElementById('mission-icon').innerHTML=isDone
-    ?'<polyline points="20 6 9 17 4 12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="10"/>'
-    :'<circle cx="12" cy="12" r="10"/>';
-  document.getElementById('mission-label').textContent=isDone?'Done for today ✓':'Mark complete';
-  document.getElementById('streak-count').textContent=ls('streak',0);
-
-  // Urgent tasks
-  const urgentEl=document.getElementById('urgent-list');
-  const done=ls('tasks_done_'+todayKey(),{});
-  const urgents=GTASKS.filter(t=>t.urgent);
-  urgentEl.innerHTML=urgents.map(t=>`
-    <div class="task-chip" style="${done[t.id]?'opacity:0.4':''}">
-      <div class="task-chip-check ${done[t.id]?'done':''}" onclick="toggleTask('${t.id}',this)">
-        ${done[t.id]?'✓':''}
-      </div>
-      <div class="task-chip-text">
-        <div style="font-weight:600;">${t.title} ${ownerBadge(t.owner)}${escalationTooltip(t.escalations)}</div>
-        <div class="task-chip-cat">${t.list}</div>
-      </div>
-    </div>`).join('');
-
-  // Gumroad snapshot
-  document.getElementById('snap-gumroad').textContent=fmtMoney(ls('gum_total',0));
-
   renderQuickNotes();
-  renderNextTask();
-}
-
-function toggleMission(){
-  const today=todayKey();
-  const was=ls('mission_done_day','')===today;
-  if(was){ss('mission_done_day','');let s=ls('streak',0);if(s>0)ss('streak',s-1);toast('Unchecked.');}
-  else{
-    ss('mission_done_day',today);
-    const yest=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
-    const last=ls('last_streak_day','');
-    let s=ls('streak',0);
-    s=(last===yest||last===today)?(last===today?s:s+1):1;
-    ss('streak',s);ss('last_streak_day',today);
-    toast('🎯 Mission done! Streak: '+s);
-  }
-  renderToday();
 }
 
 function toggleTask(id,el){
@@ -2243,34 +2032,6 @@ function toggleTask(id,el){
   el.className='task-chip-check'+(done[id]?' done':'');
   el.textContent=done[id]?'✓':'';
   renderToday();renderDiscipline();
-}
-
-// ── SCHEDULE ──
-function renderSchedule(){
-  // work_schedule is hydrated from backend on load and synced via ss();
-  // just render directly from localStorage.
-  _doRenderSchedule();
-}
-function _doRenderSchedule(){
-  const now=new Date();
-  const min=now.getHours()*60+now.getMinutes();
-  document.getElementById('sched-time-pill').textContent=now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  const dayStart=7*60,dayEnd=24*60;
-  document.getElementById('day-progress').style.width=Math.min(Math.max((min-dayStart)/(dayEnd-dayStart)*100,0),100)+'%';
-  const g=document.getElementById('guardrail');
-  if(min>=23*60+30){g.className='guardrail';g.innerHTML='🌙 MIDNIGHT HARD STOP — PUT THE PHONE DOWN.';}
-  else if(min>=23*60){g.className='guardrail warn';g.innerHTML='⚠️ 30 minutes to midnight cutoff.';}
-  else{g.className='guardrail hidden';}
-  const fmt=(h,m)=>{const ap=h>=12?'pm':'am';const hh=h>12?h-12:(h===0?12:h);return hh+(m?':'+String(m).padStart(2,'0'):'')+ap;};
-  const BLOCKS=getScheduleBlocks();
-  document.getElementById('sched-blocks').innerHTML=BLOCKS.map(b=>{
-    const cur=min>=b.start&&min<b.end,past=min>=b.end;
-    return`<div class="time-block ${cur?'current':past?'past':''}">
-      <div class="tb-icon">${b.icon}</div>
-      <div class="tb-body"><div class="tb-label">${b.label}</div><div class="tb-note">${b.note}</div></div>
-      <div class="tb-time">${fmt(Math.floor(b.start/60),b.start%60)}<br>${fmt(Math.floor(b.end/60)%24,b.end%60)}</div>
-    </div>`;
-  }).join('');
 }
 
 // ── MONEY ──
@@ -2475,14 +2236,12 @@ function renderInvestments(){
   const solEl=document.getElementById('invest-sol-display');
   const rhEl=document.getElementById('invest-rh-display');
   const totEl=document.getElementById('invest-total-display');
-  const snapEl=document.getElementById('snap-invest');
   const priceEl=document.getElementById('sol-price-label');
   const solRow=document.getElementById('sol-value-row');
   const rhBreakdown=document.getElementById('rh-breakdown');
   if(solEl)solEl.textContent=fmtMoney(solVal);
   if(rhEl)rhEl.textContent=fmtMoney(rhTotal);
   if(totEl)totEl.textContent=fmtMoney(total);
-  if(snapEl)snapEl.textContent=fmtMoney(total);
   if(priceEl)priceEl.textContent='$'+solPrice.toFixed(2);
   if(solRow)solRow.textContent=fmtMoney(solVal);
   const fetchAge=PRICE_LAST_FETCHED?Math.round((Date.now()-PRICE_LAST_FETCHED)/60000):null;
@@ -3342,74 +3101,6 @@ function importData(e){
   ss('seeded_v2',true);
 })();
 
-// ── SCHEDULE BLOCKS — dynamic based on work schedule ──
-function parseShiftTime(shift){
-  if(!shift||shift.toLowerCase()==='off')return null;
-  const toMins=(str)=>{
-    const m=str.match(/(\d+)(?::(\d+))?\s*(am|pm)/i);
-    if(!m)return null;
-    let h=parseInt(m[1]);const mn=parseInt(m[2]||0);
-    if(m[3].toLowerCase()==='pm'&&h!==12)h+=12;
-    else if(m[3].toLowerCase()==='am'&&h===12)h=0;
-    return h*60+mn;
-  };
-  // Support "4pm-9:30pm" or just "4pm"
-  const parts=shift.split(/[-–]/);
-  const start=toMins(parts[0]);
-  const end=parts[1]?toMins(parts[1]):null;
-  if(start===null)return null;
-  return {start, end: end||start+4*60};
-}
-
-function getScheduleBlocks(){
-  const todayKey_=todayKey();
-  const workSchedule=ls('work_schedule',{});
-  const dow=new Date().getDay();
-  const isWeekday=dow>=1&&dow<=5;
-  const base=[];
-
-  // ── SCHOOL BLOCKS (weekdays only — locked in) ──
-  if(isWeekday){
-    base.push({start:7*60+35,end:7*60+45,icon:'🚗',label:'Leave for school',note:'10 min drive to class — out the door at 7:35, not 7:40.'});
-    base.push({start:7*60+45,end:14*60+20,icon:'🏫',label:'School',note:'Ends 2:20pm. Lock in ground school knowledge — every concept matters for the written.'});
-    base.push({start:14*60+20,end:15*60,icon:'🔄',label:'Decompress + plan',note:'Review what you learned. Set afternoon targets before you sit down.'});
-  }
-
-  // ── WORK SHIFT (from localStorage or hardcoded today) ──
-  // Check date key first, then day-of-week, then hardcoded known shifts
-  const shift=workSchedule[todayKey_]||workSchedule[String(dow)];
-  const effectiveShift=shift||null;
-  
-  if(effectiveShift&&effectiveShift.toLowerCase()!=='off'){
-    const parsed=parseShiftTime(effectiveShift);
-    if(parsed!==null){
-      const shiftStart=parsed.start,shiftEnd=parsed.end;
-      // On weekdays: add flight/content before shift if there\'s time
-      if(isWeekday&&shiftStart>15*60){
-        base.push({start:15*60,end:Math.min(shiftStart-30,17*60),icon:'✈️',label:'Flight / sim window',note:'Use the gap before work. Every hour counts toward your PPL.'});
-      }
-      base.push({start:shiftStart,end:shiftEnd,icon:'💼',label:'Work shift',note:effectiveShift+' — show up, work hard, stack money toward the truck and flight hours.'});
-      base.push({start:shiftEnd,end:shiftEnd+90,icon:'🎬',label:'Content window',note:'Even 30 min of editing after work compounds over a week.'});
-    }
-  } else {
-    // No work shift — full free blocks
-    if(isWeekday){
-      base.push({start:15*60,end:17*60,icon:'✈️',label:'Flight / sim time',note:'2–3x per week minimum. Every hour is money well spent toward your PPL.'});
-      base.push({start:17*60,end:19*60,icon:'🎬',label:'Content creation',note:'Edit reels, post, engage Reddit/Quora. This pays you in your sleep.'});
-      base.push({start:19*60,end:21*60,icon:'🔨',label:'Drywall / side hustle',note:'Stack income. Every shift = more flight hours.'});
-    } else {
-      // Weekend free
-      base.push({start:7*60+30,end:9*60,icon:'🌄',label:'Early start',note:'Weekend mornings are your edge. Get up before everyone else does.'});
-      base.push({start:9*60,end:11*60,icon:'✈️',label:'Morning flight',note:'Weekend = more sky time. Try to get in at least 1 lesson.'});
-      base.push({start:11*60,end:14*60,icon:'🎬',label:'Content / editing',note:'Batch reels. Post during peak Sunday engagement hours.'});
-      base.push({start:14*60,end:18*60,icon:'🔨',label:'Drywall / income work',note:'Weekend jobs = extra income. Build the war chest.'});
-    }
-  }
-
-  base.push({start:22*60,end:24*60,icon:'🌙',label:'Wind down → Midnight HARD STOP',note:'Phone down. Sleep is performance. No exceptions.'});
-  return base.sort((a,b)=>a.start-b.start);
-}
-
 // ── HEADER OVERFLOW MENU (H1) ──
 // Shown only at narrow widths (<=700px) via CSS. The menu element lives in
 // the header markup; this just toggles visibility and wires up close-on-
@@ -3503,7 +3194,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   const activeTab = document.querySelector('.composer-tab.active');
   window._composerMode = (activeTab && activeTab.dataset.mode) || 'chat';
   renderToday();
-  renderSchedule();
   renderContent();
   renderDiscipline();
   renderInvestments();
@@ -3515,11 +3205,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     loadTasksFromAPI();
     setInterval(loadTasksFromAPI, 30000);
   }
-  // Refresh schedule every minute (it's now always visible in Today)
-  setInterval(()=>{
-    const todayView = document.getElementById('view-today');
-    if(todayView && todayView.classList.contains('active')) renderSchedule();
-  },60000);
   // Refresh prices every 15 minutes if app stays open
   setInterval(fetchLivePrices, 15*60*1000);
 });
