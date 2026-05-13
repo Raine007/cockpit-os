@@ -269,8 +269,12 @@
     } catch(e){}
   }
 
-  // Boot: if no token, show modal immediately; otherwise pull state
-  window.addEventListener('DOMContentLoaded', function(){
+  // Boot helper (H2): expose the sync-layer init for the consolidated
+  // DOMContentLoaded handler at the bottom of the file to invoke. This used
+  // to be its own DOMContentLoaded listener, but having three competing
+  // listeners produced order-dependent init and could double-up intervals
+  // on hot reload.
+  window.__cockpitSyncInit = function(){
     const tok = getToken();
     if(!tok){
       showAuthModal();
@@ -279,7 +283,7 @@
     }
     _startPolling();
     setInterval(_pollOffloads, 30000);
-  });
+  };
   // Expose for re-auth from settings
   window._pullAll = _pullAll;
 
@@ -1481,18 +1485,6 @@ async function _pollFeedback(){
     }
   } catch(e){ /* ignore */ }
 }
-
-// Start polls after DOM ready (appended to existing DOMContentLoaded wiring)
-window.addEventListener('DOMContentLoaded', function(){
-  _chatPollTimer = setInterval(_pollChatMessages, 3000);
-  _feedbackPollTimer = setInterval(_pollFeedback, 5000);
-  // First immediate fetch if authenticated
-  const tok = getToken();
-  if(tok){
-    _pollChatMessages();
-    _pollFeedback();
-  }
-});
 
 // ── TOAST ──
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
@@ -3184,30 +3176,50 @@ if(typeof window._updateSyncDot === 'undefined'){
   };
 }
 
-// ── INIT ──
-// Backend sync (pull state + start polling) is kicked off by the
-// Cockpit Backend Sync Layer script above via its own DOMContentLoaded handler.
-document.addEventListener('DOMContentLoaded',()=>{
-  // M4: seed composer mode from the active tab in the DOM. Previously this
-  // was only set on the first tab click, which broke silently if the active
-  // tab class was reordered (submitComposer fell back to 'chat' regardless).
+// ── INIT (H2) ──
+// Single DOMContentLoaded listener. Previously there were three competing
+// handlers across the file (backend-sync IIFE, chat-poll wiring, render
+// bootstrap) which could fire in any order and double-up intervals on
+// hot reload. This is now the only one. Steps run in dependency order:
+//   1. Seed UI state that's read on first render (composer mode)
+//   2. Backend sync layer (token check + auth modal OR pull state, then
+//      start its own polling — invoked via the exposed __cockpitSyncInit)
+//   3. Render the views so they show whatever data the pull just landed
+//   4. Wire chat + feedback polling (depend on token being present)
+//   5. Wire vault task refresh + price refresh intervals
+function init(){
+  // 1. Seed composer mode from active tab (M4)
   const activeTab = document.querySelector('.composer-tab.active');
   window._composerMode = (activeTab && activeTab.dataset.mode) || 'chat';
+
+  // 2. Backend sync init (token check, _pullAll, _startPolling, offload poll)
+  if(typeof window.__cockpitSyncInit === 'function') window.__cockpitSyncInit();
+
+  // 3. Initial renders
   renderToday();
   renderContent();
   renderDiscipline();
   renderInvestments();
-  // Fetch live prices async — updates UI when done
+
+  // 4. Chat + feedback polling (handler 2 from before)
+  if(typeof _pollChatMessages === 'function'){
+    _chatPollTimer = setInterval(_pollChatMessages, 3000);
+    _feedbackPollTimer = setInterval(_pollFeedback, 5000);
+    if(getToken()){
+      _pollChatMessages();
+      _pollFeedback();
+    }
+  }
+
+  // 5. Periodic refreshes
   fetchLivePrices();
-  // Phase 3: pull tasks from the vault (server-side cache) and refresh
-  // every 30s so changes from Obsidian show up without a page reload.
   if(typeof loadTasksFromAPI === 'function'){
     loadTasksFromAPI();
     setInterval(loadTasksFromAPI, 30000);
   }
-  // Refresh prices every 15 minutes if app stays open
   setInterval(fetchLivePrices, 15*60*1000);
-});
+}
+document.addEventListener('DOMContentLoaded', init);
 </script>
 
 <!--
