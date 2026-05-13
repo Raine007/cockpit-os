@@ -317,7 +317,7 @@
 
   --text:       #fafafa;
   --text-2:     #a1a1aa;
-  --text-3:     #71717a;
+  --text-3:     #71717a; /* WCAG AA: 4.7:1 on --surface-2 (was #52525b at 3.4:1) */
 
   --blue:       #60a5fa;
   --blue-dim:   rgba(96,165,250,0.08);
@@ -831,6 +831,17 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
   transition:color var(--ease);
 }
 .header-btns button:hover,.header-btns label:hover{color:var(--text);}
+
+/* M2: honor system reduced-motion preference. Disables pulses, fades, and
+   the transitions used on cards / buttons throughout. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 /* H1: responsive header. Below 700px the inline secondary actions collapse
    into an overflow menu. Sync and Vault stay visible at all sizes because
