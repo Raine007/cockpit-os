@@ -18,19 +18,33 @@
   // Show an inline auth modal (Safari blocks prompt() on page load without user gesture)
   function showAuthModal(){
     if(document.getElementById('_cockpit_auth_modal')) return;
+    // M5: respect a session-scoped dismissal so Cancel actually sticks. Without
+    // this, any code path calling getToken() (renders, polling, etc.) would
+    // re-pop the modal seconds after Cancel.
+    try {
+      if(sessionStorage.getItem('_cockpit_auth_dismissed')==='1'){
+        showAuthBanner();
+        return;
+      }
+    } catch(_){ /* sessionStorage may be unavailable in private mode */ }
     const m = document.createElement('div');
     m.id = '_cockpit_auth_modal';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(8px)';
     m.innerHTML = '<div style="background:#18181b;border:1px solid #27272a;border-radius:16px;padding:24px;max-width:420px;width:100%;color:#fafafa;font-family:-apple-system,BlinkMacSystemFont,sans-serif">' +
       '<div style="font-size:18px;font-weight:600;margin-bottom:8px">Cockpit OS</div>' +
-      '<div style="font-size:13px;color:#a1a1aa;margin-bottom:16px;line-height:1.5">Enter your admin token to sync state with the backend. Stored locally on this device only.</div>' +
+      '<div style="font-size:13px;color:#a1a1aa;margin-bottom:12px;line-height:1.5">Enter your admin token to sync state with the backend. Stored locally on this device only.</div>' +
+      '<div style="font-size:11px;color:#71717a;margin-bottom:16px;line-height:1.5;padding:8px 10px;background:#09090b;border:1px solid #27272a;border-radius:8px">Get your token from Cloud Run console &rarr; cockpit-os &rarr; Variables &amp; Secrets &rarr; COCKPIT_ADMIN_TOKEN</div>' +
       '<input id="_cockpit_token_input" type="password" autocomplete="off" placeholder="paste token" style="width:100%;padding:12px;background:#09090b;border:1px solid #27272a;border-radius:8px;color:#fafafa;font-size:14px;margin-bottom:12px;font-family:ui-monospace,monospace;-webkit-appearance:none;box-sizing:border-box"/>' +
-      '<button id="_cockpit_token_save" style="width:100%;padding:12px;background:#3b82f6;border:none;border-radius:8px;color:white;font-weight:600;font-size:14px;cursor:pointer">Save & Sync</button>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button id="_cockpit_token_cancel" style="flex:0 0 auto;padding:12px 16px;background:transparent;border:1px solid #27272a;border-radius:8px;color:#a1a1aa;font-weight:600;font-size:14px;cursor:pointer">Cancel</button>' +
+        '<button id="_cockpit_token_save" style="flex:1;padding:12px;background:#3b82f6;border:none;border-radius:8px;color:white;font-weight:600;font-size:14px;cursor:pointer">Save &amp; Sync</button>' +
+      '</div>' +
       '<div id="_cockpit_token_err" style="font-size:12px;color:#ef4444;margin-top:8px;min-height:16px"></div>' +
       '</div>';
     document.body.appendChild(m);
     const input = document.getElementById('_cockpit_token_input');
     const btn = document.getElementById('_cockpit_token_save');
+    const cancel = document.getElementById('_cockpit_token_cancel');
     const err = document.getElementById('_cockpit_token_err');
     setTimeout(()=>input.focus(), 100);
     async function submit(){
@@ -40,24 +54,60 @@
       try {
         const test = await fetch('/api/state', { headers:{ 'Authorization':'Bearer '+v }});
         if(!test.ok){ err.textContent = 'Invalid token (HTTP '+test.status+')'; return; }
-        localStorage.setItem('_cockpit_admin_token', v);
+        setToken(v);
+        try { sessionStorage.removeItem('_cockpit_auth_dismissed'); } catch(_){}
         m.remove();
+        hideAuthBanner();
         // Now hydrate
         if(typeof _pullAll==='function') _pullAll();
       } catch(e){ err.textContent = 'Network error: '+e.message; }
     }
+    function dismiss(){
+      try { sessionStorage.setItem('_cockpit_auth_dismissed','1'); } catch(_){}
+      m.remove();
+      showAuthBanner();
+    }
     btn.addEventListener('click', submit);
+    cancel.addEventListener('click', dismiss);
     input.addEventListener('keydown', function(e){ if(e.key==='Enter') submit(); });
   }
 
-  function getToken(){
-    let t = localStorage.getItem('_cockpit_admin_token');
-    if(!t){
-      // Show inline modal instead of prompt() — works on iOS Safari
+  // M5: top banner shown when the modal is dismissed without a valid token.
+  // Clicking it re-opens the modal (clears the session dismissal flag first).
+  function showAuthBanner(){
+    if(document.getElementById('_cockpit_auth_banner')) return;
+    const b = document.createElement('div');
+    b.id = '_cockpit_auth_banner';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99998;background:#7c2d12;color:#fed7aa;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:6px 12px;text-align:center;cursor:pointer;border-bottom:1px solid #9a3412';
+    b.innerHTML = 'Not authenticated &mdash; token required for sync. Tap to enter.';
+    b.addEventListener('click', function(){
+      try { sessionStorage.removeItem('_cockpit_auth_dismissed'); } catch(_){}
+      b.remove();
       showAuthModal();
-      return '';
-    }
-    return (t||'').trim();
+    });
+    document.body.appendChild(b);
+  }
+  function hideAuthBanner(){
+    const b = document.getElementById('_cockpit_auth_banner');
+    if(b) b.remove();
+  }
+  window._cockpitHideAuthBanner = hideAuthBanner;
+
+  // Token helpers (M1) — consolidates 16 inline `localStorage.getItem(...)`
+  // reads, 1 inline setItem write, and 12 raw Authorization header builds.
+  // All callers handle the "no token" case themselves (return silent for
+  // background paths, toast for user-triggered actions). The auth modal is
+  // shown via window._cockpitShowAuthModal at the entry points that need it.
+  const TOKEN_KEY = '_cockpit_admin_token';
+  function getToken(){
+    try { return (localStorage.getItem(TOKEN_KEY) || '').trim(); }
+    catch(_) { return ''; }
+  }
+  function setToken(t){
+    try { localStorage.setItem(TOKEN_KEY, t); } catch(_) {}
+  }
+  function apiHeaders(){
+    return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' };
   }
   window._cockpitShowAuthModal = showAuthModal;
 
@@ -68,7 +118,11 @@
     'quick_notes','income_log','gum_total','gum_units','gum_log',
     'posted_reels','post_days','caption_draft','cfi_notes',
     'work_schedule','ctask_','rh_balance','seeded_v2',
-    'sol_price_cache','rh_price_cache','price_fetched_at','mission_override_'
+    'sol_price_cache','rh_price_cache','price_fetched_at','mission_override_',
+    // C3: route feedback + post-link writes through backend sync.
+    // These were previously written to Firebase Realtime DB; that backend
+    // was removed but the write call sites were never updated.
+    'feedback_','ntlink_','rplink_','qlink_','rlink_'
   ];
 
   window._shouldSync = function(k){
@@ -87,7 +141,7 @@
       try {
         await fetch('/api/state/' + encodeURIComponent(k), {
           method: 'PUT',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          headers: apiHeaders(),
           body: JSON.stringify({ value: v })
         });
       } catch(e){ console.warn('[Cockpit Sync] write failed', k, e); }
@@ -99,7 +153,7 @@
   window._fbRead  = function(k,cb){
     const token = getToken();
     if(!token) return;
-    fetch('/api/state/'+encodeURIComponent(k), { headers:{ 'Authorization':'Bearer '+token }})
+    fetch('/api/state/'+encodeURIComponent(k), { headers:apiHeaders()})
       .then(r=>r.json())
       .then(j=>{ if(j.ok && j.value !== null) cb(j.value); })
       .catch(()=>{});
@@ -116,7 +170,7 @@
     const token = getToken();
     if(!token) return;
     try {
-      const res = await fetch('/api/state', { headers:{ 'Authorization':'Bearer '+token }});
+      const res = await fetch('/api/state', { headers:apiHeaders()});
       const j = await res.json();
       if(!j.ok) return;
       const state = j.state || {};
@@ -139,10 +193,10 @@
   // Background poll every 30s — pick up changes from other devices
   function _startPolling(){
     setInterval(async function(){
-      const token = localStorage.getItem('_cockpit_admin_token');
+      const token = getToken();
       if(!token) return;
       try {
-        const res = await fetch('/api/state', { headers:{ 'Authorization':'Bearer '+token }});
+        const res = await fetch('/api/state', { headers:apiHeaders()});
         const j = await res.json();
         if(!j.ok) return;
         const state = j.state || {};
@@ -204,10 +258,10 @@
 
   // Offload polling: update the offload status indicator every 30s
   async function _pollOffloads(){
-    const token = localStorage.getItem('_cockpit_admin_token');
+    const token = getToken();
     if(!token) return;
     try {
-      const res = await fetch('/api/dashboard/jobs', { headers:{ 'Authorization':'Bearer '+token }});
+      const res = await fetch('/api/dashboard/jobs', { headers:apiHeaders()});
       const j = await res.json();
       if(!j.ok) return;
       const pending = (j.histogram && j.histogram.queued) || 0;
@@ -218,7 +272,7 @@
 
   // Boot: if no token, show modal immediately; otherwise pull state
   window.addEventListener('DOMContentLoaded', function(){
-    const tok = localStorage.getItem('_cockpit_admin_token');
+    const tok = getToken();
     if(!tok){
       showAuthModal();
     } else {
@@ -239,7 +293,7 @@
     try {
       const res = await fetch('/api/computer/offload', {
         method: 'POST',
-        headers: { 'Authorization':'Bearer '+token, 'Content-Type':'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify({ title: desc.trim(), instructions: desc.trim() })
       });
       const j = await res.json();
@@ -317,7 +371,10 @@ img,svg{display:block;max-width:100%;}
 ::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:99px;}
 
 /* ── LAYOUT ── */
-.app{max-width:480px;margin:0 auto;padding:var(--s4) var(--s5);padding-top:calc(var(--s4)+env(safe-area-inset-top));}
+/* M6: padding-top is just var(--s4) here. The notch offset is already
+   applied to body via padding-top:env(safe-area-inset-top), so adding it
+   again on .app stacked the offset twice on notched iPhones. */
+.app{max-width:480px;margin:0 auto;padding:var(--s4) var(--s5);}
 
 /* ── NAV ── */
 .nav-tabs{
@@ -670,12 +727,7 @@ img,svg{display:block;max-width:100%;}
 .score-num.amber{color:var(--amber);}
 .score-num.crimson{color:var(--crimson);}
 .score-sub{font-size:var(--text-sm);color:var(--text-3);margin-top:var(--s2);}
-.week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:var(--s2);margin-top:var(--s3);}
-.week-pip{display:flex;flex-direction:column;align-items:center;gap:3px;}
-.week-pip-label{font-size:.5rem;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;}
-.week-pip-dot{width:100%;aspect-ratio:1;border-radius:6px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:.55rem;color:var(--text-3);}
-.week-pip-dot.done{background:var(--blue-dim);color:var(--blue);}
-.week-pip-dot.today{box-shadow:0 0 0 1.5px var(--blue);}
+
 
 /* ── TOAST ── */
 .toast{
@@ -712,7 +764,7 @@ textarea.note-area{
 textarea.note-area:focus{outline:none;box-shadow:0 0 0 1.5px var(--blue);}
 textarea.note-area::placeholder{color:var(--text-3);}
 button,a,[role=button]{min-height:44px;min-width:44px;}
-.pill,.ledger-row,.week-pip-dot,.task-chip-check,.btn-sm{min-height:unset;min-width:unset;}
+.pill,.ledger-row,.task-chip-check,.btn-sm{min-height:unset;min-width:unset;}
 
 /* ── NEXT TASK CARD ── */
 #next-task-card{
@@ -770,7 +822,7 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
 .nt-steps ol li strong{color:var(--text);}
 
 /* ── EXPORT/IMPORT BTNS ── */
-.header-btns{display:flex;gap:var(--s2);margin-left:auto;}
+.header-btns{display:flex;gap:var(--s2);margin-left:auto;position:relative;}
 .header-btns button,.header-btns label{
   background:var(--surface-2);color:var(--text-2);
   font-size:.7rem;font-weight:600;padding:var(--s2) var(--s3);
@@ -789,6 +841,26 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* H1: responsive header. Below 700px the inline secondary actions collapse
+   into an overflow menu. Sync and Vault stay visible at all sizes because
+   they carry status indicators. */
+.header-inline-actions{display:flex;gap:var(--s2);}
+.header-overflow-toggle{display:none;font-size:1rem;padding:var(--s2) 12px;letter-spacing:1px;}
+.header-overflow-menu{
+  position:absolute;top:calc(100% + 6px);right:0;z-index:50;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:6px;display:flex;flex-direction:column;gap:4px;min-width:180px;
+  box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+.header-overflow-menu[hidden]{display:none;}
+.header-overflow-menu button,.header-overflow-menu label{
+  width:100%;justify-content:flex-start;text-align:left;
+}
+@media (max-width:700px){
+  .header-inline-actions{display:none;}
+  .header-overflow-toggle{display:flex;}
 }
 </style>
 </head>
@@ -809,8 +881,6 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
       <div class="logo-sub" id="header-date">—</div>
     </div>
     <div class="header-btns">
-      <button onclick="exportData()">↑ Export</button>
-      <label>↓ Import<input type="file" accept=".json" style="display:none;" onchange="importData(event)"/></label>
       <button id="sync-btn" onclick="showSyncPanel()" title="Sync status" style="display:flex;align-items:center;gap:5px;">
         <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--text-3);display:inline-block;"></span>
         Sync
@@ -819,9 +889,22 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
         <span id="vault-dot" style="width:7px;height:7px;border-radius:50%;background:var(--text-3);display:inline-block;"></span>
         Vault
       </button>
-      <button onclick="sendToComputer()" title="Offload a task to Computer" style="display:flex;align-items:center;gap:5px;background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px 10px;font-size:var(--text-sm);cursor:pointer;">
-        &#x1F4E4; Send to Claw
-      </button>
+      <!-- H1: inline secondary actions. Hidden under 700px; replaced by the overflow menu below. -->
+      <div class="header-inline-actions">
+        <button onclick="exportData()">&uarr; Export</button>
+        <label>&darr; Import<input type="file" accept=".json" style="display:none;" onchange="importData(event)"/></label>
+        <button onclick="sendToComputer()" title="Offload a task to Computer" style="display:flex;align-items:center;gap:5px;background:var(--blue-dim);border:1px solid var(--blue);color:var(--blue);border-radius:8px;padding:6px 10px;font-size:var(--text-sm);cursor:pointer;">
+          &#x1F4E4; Send to Claw
+        </button>
+      </div>
+      <!-- H1: overflow toggle. Shown only under 700px. -->
+      <button class="header-overflow-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="header-overflow-menu" onclick="toggleHeaderOverflow(event)" title="More actions">&middot;&middot;&middot;</button>
+      <!-- H1: overflow menu. Positioned absolute over the header-btns container. -->
+      <div class="header-overflow-menu" id="header-overflow-menu" role="menu" hidden>
+        <button role="menuitem" onclick="exportData();closeHeaderOverflow()">&uarr; Export</button>
+        <label role="menuitem">&darr; Import<input type="file" accept=".json" style="display:none;" onchange="importData(event);closeHeaderOverflow()"/></label>
+        <button role="menuitem" onclick="sendToComputer();closeHeaderOverflow()" style="color:var(--blue);">&#x1F4E4; Send to Claw</button>
+      </div>
     </div>
     <div id="offload-status" style="font-size:var(--text-xs);color:var(--amber);text-align:right;padding-right:4px;min-height:1em;"></div>
   </div>
@@ -1004,28 +1087,11 @@ button,a,[role=button]{min-height:44px;min-width:44px;}
   </div>
 
   <!-- Live accounts -->
-  <div class="card">
+  <div class="card" id="cash-accounts-card">
     <div class="accent-bar ab-silver"></div>
-    <div class="card-title">Cash Accounts — Plaid (Apr 28)</div>
-    <div class="ledger">
-      <div class="ledger-row"><span class="ledger-label">Cap One Savings — Truck Fund</span><span class="ledger-amt">$1,074.98</span></div>
-      <div class="ledger-row"><span class="ledger-label">Firefighters Checking</span><span class="ledger-amt">$194.61</span></div>
-      <div class="ledger-row"><span class="ledger-label">Cap One Checking</span><span class="ledger-amt">$683.49</span></div>
-      <div class="ledger-row"><span class="ledger-label">Firefighters Savings</span><span class="ledger-amt">$10.01</span></div>
-      <div class="ledger-row" style="padding-top:var(--s3);">
-        <span style="color:var(--text-2);font-weight:700;font-size:var(--text-xs);">Total Liquid</span>
-        <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:var(--blue);">$1,963.09</span>
-      </div>
-      <div class="ledger-row"><span class="ledger-label" style="color:var(--crimson);">Gemini CC (33.49% APR ⚠)</span><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-xs);color:var(--crimson);">-$588.02</span></div>
-      <div class="ledger-row"><span class="ledger-label" style="color:var(--amber);">Cap One CC</span><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-xs);color:var(--amber);">-$34.32</span></div>
-      <div class="ledger-row" style="background:var(--surface-2);">
-        <span style="color:var(--white);font-weight:700;font-size:var(--text-xs);">Net Liquid</span>
-        <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:var(--green);">$1,340.75</span>
-      </div>
-    </div>
-    <div class="alert-box" style="margin-top:var(--s4);">
-      <div class="alert-box-icon">🔥</div>
-      <div><div class="alert-box-text">Kill the Gemini card FIRST.</div><div class="alert-box-sub">33.49% APR = ~$17/mo in interest for nothing. Wipe it before stacking the truck fund.</div></div>
+    <div class="card-title">Cash Accounts <span id="cash-accounts-asof" style="font-weight:400;color:var(--text-3);font-size:.65rem;margin-left:6px;"></span></div>
+    <div class="ledger" id="cash-accounts-ledger">
+      <div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">Loading balances...</div>
     </div>
   </div>
 
@@ -1247,11 +1313,6 @@ let _chatPollTimer = null;
 let _feedbackRequests = [];
 let _feedbackPollTimer = null;
 
-function _chatApiHeaders(){
-  const token = localStorage.getItem('_cockpit_admin_token') || '';
-  return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
-}
-
 function _buildChatRows(msgs, list){
   list.innerHTML = '';
   const items = msgs || [];
@@ -1326,7 +1387,7 @@ async function sendChatMessage(tab){
   input.value = '';
   const legacy = document.getElementById('chat-input-today');
   if(legacy && legacy !== input) legacy.value = '';
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   // Build tab_context snapshot from localStorage
   let tab_context = null;
@@ -1350,7 +1411,7 @@ async function sendChatMessage(tab){
   try {
     const res = await fetch('/api/chat/message', {
       method: 'POST',
-      headers: _chatApiHeaders(),
+      headers: apiHeaders(),
       body: JSON.stringify({ text: text, role: 'user', context_tab: tab||'today', tab_context: tab_context })
     });
     const j = await res.json();
@@ -1366,11 +1427,11 @@ async function sendChatMessage(tab){
 }
 
 async function _pollChatMessages(){
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token) return;
   try {
     const params = _chatLastTs ? '?since=' + encodeURIComponent(_chatLastTs) : '';
-    const res = await fetch('/api/chat/messages' + params, { headers: _chatApiHeaders() });
+    const res = await fetch('/api/chat/messages' + params, { headers: apiHeaders() });
     const j = await res.json();
     if(!j.ok) return;
     const msgs = j.messages || [];
@@ -1394,7 +1455,7 @@ async function _pollChatMessages(){
       }
     }
     // Also poll pending jobs for typing indicator
-    const pendRes = await fetch('/api/chat/pending', { headers: _chatApiHeaders() });
+    const pendRes = await fetch('/api/chat/pending', { headers: apiHeaders() });
     const pendJ = await pendRes.json();
     window._chatPendingJobs = pendJ.ok ? pendJ.jobs : [];
     _updateChatTypingIndicator();
@@ -1451,12 +1512,12 @@ async function submitFeedbackAnswer(feedbackId){
   const ansInput = document.getElementById('fb-ans-' + feedbackId);
   const answer = (ansInput ? ansInput.value : '').trim();
   if(!answer){ toast('Please enter an answer'); return; }
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   try {
     const res = await fetch('/api/feedback/answer', {
       method: 'POST',
-      headers: _chatApiHeaders(),
+      headers: apiHeaders(),
       body: JSON.stringify({ feedback_id: feedbackId, answer: answer })
     });
     const j = await res.json();
@@ -1473,10 +1534,10 @@ async function submitFeedbackAnswer(feedbackId){
 }
 
 async function _pollFeedback(){
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token) return;
   try {
-    const res = await fetch('/api/feedback/pending', { headers: _chatApiHeaders() });
+    const res = await fetch('/api/feedback/pending', { headers: apiHeaders() });
     const j = await res.json();
     if(!j.ok) return;
     _feedbackRequests = j.feedback_requests || [];
@@ -1499,7 +1560,7 @@ window.addEventListener('DOMContentLoaded', function(){
   _chatPollTimer = setInterval(_pollChatMessages, 3000);
   _feedbackPollTimer = setInterval(_pollFeedback, 5000);
   // First immediate fetch if authenticated
-  const tok = localStorage.getItem('_cockpit_admin_token');
+  const tok = getToken();
   if(tok){
     _pollChatMessages();
     _pollFeedback();
@@ -1564,9 +1625,9 @@ function adaptServerTask(t){
 
 async function loadTasksFromAPI(){
   try{
-    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    const tok = getToken();
     if(!tok) return false;
-    const res = await fetch('/api/tasks/all', { headers:{ 'Authorization': 'Bearer '+tok } });
+    const res = await fetch('/api/tasks/all', { headers:apiHeaders() });
     if(!res.ok){ console.warn('loadTasks: HTTP', res.status); return false; }
     const data = await res.json();
     const list = (data && Array.isArray(data.tasks)) ? data.tasks : [];
@@ -1585,12 +1646,12 @@ async function loadTasksFromAPI(){
 
 async function postTaskDone(taskId){
   try{
-    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    const tok = getToken();
     if(!tok) return false;
     const today = todayKey();
     await fetch('/api/tasks/'+encodeURIComponent(taskId)+'/done', {
       method:'POST',
-      headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':'application/json' },
+      headers:apiHeaders(),
       body: JSON.stringify({ completed_on: today }),
     });
     return true;
@@ -1600,11 +1661,11 @@ async function postTaskDone(taskId){
 async function postTaskFeedback(taskId, text){
   if(!text || !text.trim()) return false;
   try{
-    const tok = localStorage.getItem('_cockpit_admin_token') || '';
+    const tok = getToken();
     if(!tok) return false;
     const res = await fetch('/api/tasks/'+encodeURIComponent(taskId)+'/feedback', {
       method:'POST',
-      headers:{ 'Authorization':'Bearer '+tok, 'Content-Type':'application/json' },
+      headers:apiHeaders(),
       body: JSON.stringify({ author: 'raine', text: text.trim() }),
     });
     if(res.ok){ loadTasksFromAPI(); return true; }
@@ -1668,6 +1729,23 @@ function getNextTask(){
   });
   // Return first task that isn't done or snoozed today
   return sorted.find(t => !done[t.id] && !snoozed.includes(t.id)) || null;
+}
+
+// Helper for the "Paste your posted link" UI shared by reddit-post and reel
+// task action panels. Previously duplicated inline in two else-if branches
+// of buildTaskActionPanel (H7).
+function postLinkField(task){
+  const savedLink = ls('ntlink_' + task.id, '');
+  return `<div style="margin-top:12px;padding:10px 12px;background:var(--surface-3);border:1px solid var(--border);border-radius:10px;">
+    <div class="nt-section-label" style="margin-bottom:6px;">Paste your posted link</div>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <input id="ntlink-${task.id}" type="url" placeholder="Paste the live URL after you post..." value="${savedLink}"
+        style="flex:1;font-size:.68rem;padding:6px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border-hi);color:var(--text);outline:none;"/>
+      <button onclick="savePostLink('task','${task.id}',document.getElementById('ntlink-${task.id}').value)"
+        style="font-size:.62rem;padding:5px 12px;border-radius:8px;background:var(--blue);border:none;color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Save</button>
+    </div>
+    <div id="ntlink-status-${task.id}" style="font-size:.6rem;color:var(--text-3);margin-top:4px;">${savedLink ? '\u2714 Saved \u2014 I\'ll check engagement in the morning' : ''}</div>
+  </div>`;
 }
 
 // Build the action panel for a task — materials + steps, no fluff
@@ -1734,18 +1812,7 @@ function buildTaskActionPanel(task){
       'Post, then reply to every comment within the first hour'
     ]);
 
-  // ── POST LINK FIELD (shown for social/content tasks) ──
-  const savedLink = ls('ntlink_' + task.id, '');
-  html += `<div style="margin-top:12px;padding:10px 12px;background:var(--surface-3);border:1px solid var(--border);border-radius:10px;">
-    <div class="nt-section-label" style="margin-bottom:6px;">Paste your posted link</div>
-    <div style="display:flex;gap:6px;align-items:center;">
-      <input id="ntlink-${task.id}" type="url" placeholder="Paste the live URL after you post..." value="${savedLink}"
-        style="flex:1;font-size:.68rem;padding:6px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border-hi);color:var(--text);outline:none;"/>
-      <button onclick="savePostLink('task','${task.id}',document.getElementById('ntlink-${task.id}').value)"
-        style="font-size:.62rem;padding:5px 12px;border-radius:8px;background:var(--blue);border:none;color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Save</button>
-    </div>
-    <div id="ntlink-status-${task.id}" style="font-size:.6rem;color:var(--text-3);margin-top:4px;">${savedLink ? '\u2714 Saved \u2014 I\'ll check engagement in the morning' : ''}</div>
-  </div>`;
+  html += postLinkField(task);
 
   // ── REEL / POST TASKS ──
   } else if(cat==='content' && (t.toLowerCase().includes('reel') || t.toLowerCase().includes('post reel'))){
@@ -1772,18 +1839,7 @@ function buildTaskActionPanel(task){
       'Post → reply to every comment in first 30 min'
     ]);
 
-  // ── POST LINK FIELD (shown for social/content tasks) ──
-  const savedLink = ls('ntlink_' + task.id, '');
-  html += `<div style="margin-top:12px;padding:10px 12px;background:var(--surface-3);border:1px solid var(--border);border-radius:10px;">
-    <div class="nt-section-label" style="margin-bottom:6px;">Paste your posted link</div>
-    <div style="display:flex;gap:6px;align-items:center;">
-      <input id="ntlink-${task.id}" type="url" placeholder="Paste the live URL after you post..." value="${savedLink}"
-        style="flex:1;font-size:.68rem;padding:6px 10px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border-hi);color:var(--text);outline:none;"/>
-      <button onclick="savePostLink('task','${task.id}',document.getElementById('ntlink-${task.id}').value)"
-        style="font-size:.62rem;padding:5px 12px;border-radius:8px;background:var(--blue);border:none;color:#fff;cursor:pointer;font-weight:700;white-space:nowrap;">Save</button>
-    </div>
-    <div id="ntlink-status-${task.id}" style="font-size:.6rem;color:var(--text-3);margin-top:4px;">${savedLink ? '\u2714 Saved \u2014 I\'ll check engagement in the morning' : ''}</div>
-  </div>`;
+  html += postLinkField(task);
 
   // ── INSTAGRAM DM TASKS ──
   } else if(cat==='content' && t.toLowerCase().includes('dm')){
@@ -1988,13 +2044,13 @@ async function addQuickNote(){
   if(legacy) legacy.value='';
   renderQuickNotes();
   // Stream into OpenClaw — same channel as chat
-  const token=localStorage.getItem('_cockpit_admin_token')||'';
+  const token=getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   const msg='[note] '+text;
   try {
     const res=await fetch('/api/chat/message',{
       method:'POST',
-      headers:_chatApiHeaders(),
+      headers:apiHeaders(),
       body:JSON.stringify({ text:msg, role:'user', context_tab:'today', tab_context:{ is_note:true, category:cat } })
     });
     const j=await res.json();
@@ -2125,8 +2181,6 @@ function renderToday(){
   // Show task notes if available
   const mNotesEl=document.getElementById('mission-notes');
   if(mNotesEl){mNotesEl.textContent=mNotes||'';mNotesEl.style.display=mNotes?'block':'none';}
-  const task=ls('today_task','');  // keep for legacy compat
-  void task;
   const isDone=ls('mission_done_day','')===todayKey();
   const btn=document.getElementById('mission-btn');
   btn.className='mission-check-btn'+(isDone?' done':'');
@@ -2154,7 +2208,6 @@ function renderToday(){
   // Gumroad snapshot
   document.getElementById('snap-gumroad').textContent=fmtMoney(ls('gum_total',0));
 
-  renderWeekGrid();
   renderQuickNotes();
   renderNextTask();
 }
@@ -2193,15 +2246,6 @@ function toggleTask(id,el){
 }
 
 // ── SCHEDULE ──
-const _BLOCKS_LEGACY=[
-  {start:7*60+35,end:7*60+45,icon:'🚗',label:'Leave for school',note:'10 min drive — don\'t be late.'},
-  {start:7*60+45,end:14*60+20,icon:'🏫',label:'School',note:'Ends 2:20pm. Ground school in your head.'},
-  {start:14*60+20,end:15*60+30,icon:'🔄',label:'Transition / decompress',note:'Review notes, plan the afternoon.'},
-  {start:15*60+30,end:17*60+30,icon:'✈️',label:'Flight lesson / sim',note:'2-3x per week target. Every hour counts.'},
-  {start:17*60+30,end:19*60+30,icon:'🎬',label:'Content creation',note:'Edit reels, post, engage Reddit/Quora.'},
-  {start:19*60+30,end:22*60,icon:'🔨',label:'Job / Drywall work',note:'$400-500/wk. Stack it.'},
-  {start:22*60,end:24*60,icon:'🌙',label:'Wind down → Midnight STOP',note:'Hard stop at midnight. No exceptions.'},
-];
 function renderSchedule(){
   // work_schedule is hydrated from backend on load and synced via ss();
   // just render directly from localStorage.
@@ -2232,6 +2276,10 @@ function _doRenderSchedule(){
 // ── MONEY ──
 function renderMoney(){
   renderInvestments();
+  // C6: pull live cash + holdings snapshot from backend state.
+  // Fire-and-forget so the rest of the tab renders immediately; the cash
+  // card shows "Loading balances..." until this resolves.
+  fetchMarketSnapshot();
   const incomeLog=ls('income_log',[]);
   const now=new Date();
   const weekAgo=new Date(now);weekAgo.setDate(weekAgo.getDate()-7);
@@ -2253,6 +2301,81 @@ function renderMoney(){
   document.getElementById('money-alert-pill').style.display='flex';
 }
 
+// C6: fetch /api/market/snapshot and render the cash accounts card.
+// Schema (all fields optional, UI degrades gracefully when null):
+//   cash:    [{ label: string, amount: number }]  (negative = liability)
+//   asOf:    ISO timestamp string
+async function fetchMarketSnapshot(){
+  const ledgerEl = document.getElementById('cash-accounts-ledger');
+  const asOfEl = document.getElementById('cash-accounts-asof');
+  if(!ledgerEl) return;
+  const token = getToken();
+  if(!token){
+    ledgerEl.innerHTML = '<div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">Sign in to load balances.</div>';
+    return;
+  }
+  try {
+    const res = await fetch('/api/market/snapshot', { headers:{ 'Authorization':'Bearer '+token }});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const j = await res.json();
+    renderCashAccounts(j.cash, j.asOf);
+    // Stash holdings + sol data for renderInvestments to use.
+    if(Array.isArray(j.holdings)) window._liveHoldings = j.holdings;
+    if(typeof j.sol_price === 'number') { window._liveSolPrice = j.sol_price; }
+    if(typeof j.sol_holdings === 'number') { window._liveSolHoldings = j.sol_holdings; }
+    // Re-render investments so the backend holdings replace the baked constants
+    // on the screen. Live Yahoo prices (LIVE_RH_PRICES) layer on top naturally
+    // since they're independent state.
+    if(typeof renderInvestments === 'function') renderInvestments();
+  } catch(e){
+    ledgerEl.innerHTML = '<div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">Could not load balances. <span style="color:var(--amber);">'+e.message+'</span></div>';
+  }
+}
+
+function renderCashAccounts(cash, asOf){
+  const ledgerEl = document.getElementById('cash-accounts-ledger');
+  const asOfEl = document.getElementById('cash-accounts-asof');
+  if(!ledgerEl) return;
+  if(!Array.isArray(cash) || cash.length === 0){
+    ledgerEl.innerHTML = '<div style="text-align:center;padding:var(--s4);color:var(--text-3);font-size:var(--text-xs);">No balance data \u2014 sync pending.<br/><span style="font-size:.62rem;">Seed via <code>PUT /api/state/plaid_balances</code></span></div>';
+    if(asOfEl) asOfEl.textContent = '';
+    return;
+  }
+  const assets = cash.filter(c => Number(c.amount) >= 0);
+  const liabilities = cash.filter(c => Number(c.amount) < 0);
+  const totalLiquid = assets.reduce((s,c)=>s+Number(c.amount||0),0);
+  const totalDebt = liabilities.reduce((s,c)=>s+Number(c.amount||0),0); // already negative
+  const netLiquid = totalLiquid + totalDebt;
+  let html = '';
+  assets.forEach(c => {
+    html += `<div class="ledger-row"><span class="ledger-label">${escapeHtml(c.label||'')}</span><span class="ledger-amt">${fmtMoney(Number(c.amount||0))}</span></div>`;
+  });
+  html += `<div class="ledger-row" style="padding-top:var(--s3);">
+    <span style="color:var(--text-2);font-weight:700;font-size:var(--text-xs);">Total Liquid</span>
+    <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:var(--blue);">${fmtMoney(totalLiquid)}</span>
+  </div>`;
+  liabilities.forEach(c => {
+    const color = Math.abs(Number(c.amount||0)) > 200 ? 'var(--crimson)' : 'var(--amber)';
+    html += `<div class="ledger-row"><span class="ledger-label" style="color:${color};">${escapeHtml(c.label||'')}</span><span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-xs);color:${color};">${fmtMoney(Number(c.amount||0))}</span></div>`;
+  });
+  html += `<div class="ledger-row" style="background:var(--surface-2);">
+    <span style="color:var(--white);font-weight:700;font-size:var(--text-xs);">Net Liquid</span>
+    <span style="font-family:'DM Mono',monospace;font-weight:700;font-size:var(--text-sm);color:${netLiquid>=0?'var(--green)':'var(--crimson)'};">${fmtMoney(netLiquid)}</span>
+  </div>`;
+  ledgerEl.innerHTML = html;
+  if(asOfEl && asOf){
+    const d = new Date(asOf);
+    if(!isNaN(d.getTime())){
+      const label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      asOfEl.textContent = '\u2014 as of '+label;
+    } else {
+      asOfEl.textContent = '';
+    }
+  } else if(asOfEl){
+    asOfEl.textContent = '';
+  }
+}
+
 function logGumroad(){
   const inp=document.getElementById('gum-manual');
   const amt=parseFloat(inp.value);if(!amt||amt<=0){toast('Enter amount.');return;}
@@ -2266,10 +2389,6 @@ function logIncome(){
   const amt=parseFloat(inp.value);if(!amt||amt<=0){toast('Enter amount.');return;}
   const log=ls('income_log',[]);log.push({date:todayKey(),amt,note:'Job/Drywall',type:'job'});
   ss('income_log',log);inp.value='';renderMoney();renderToday();toast('+'+fmtMoney(amt)+' logged ✓');
-}
-
-function setCheckride(){
-  toast('Checkride fund section removed.');
 }
 
 function setRobinhood(){
@@ -2326,21 +2445,32 @@ const RH_HOLDINGS = [
   {ticker:'OKLO',name:'Oklo',qty:1.42,price:69.03,value:98.02},
   {ticker:'COKE',name:'Coca-Cola Consolidated',qty:0.02,price:200.74,value:4.01},
 ];
-const RH_TOTAL = 1711.58;
 
 function renderInvestments(){
-  // Use live prices if available, else use baked constants
-  const solPrice=LIVE_SOL_PRICE||86.72;
-  const rhPrices=LIVE_RH_PRICES||{};
+  // C6: holdings now come from the backend snapshot when available
+  // (window._liveHoldings / _liveSolHoldings, populated by fetchMarketSnapshot),
+  // falling back to the baked RH_HOLDINGS / SOL_HOLDINGS constants on first
+  // paint or when the snapshot endpoint is unreachable. Live Yahoo Finance
+  // prices still layer on top via LIVE_RH_PRICES.
+  const holdingsSource = (Array.isArray(window._liveHoldings) && window._liveHoldings.length > 0)
+    ? window._liveHoldings
+    : RH_HOLDINGS;
+  const solHoldings = (typeof window._liveSolHoldings === 'number' && window._liveSolHoldings > 0)
+    ? window._liveSolHoldings
+    : SOL_HOLDINGS;
+  const solPrice = LIVE_SOL_PRICE
+    || (typeof window._liveSolPrice === 'number' ? window._liveSolPrice : 0)
+    || 86.72;
+  const rhPrices = LIVE_RH_PRICES || {};
   // Recalculate RH holdings with live prices
   let rhTotal=0;
-  const liveHoldings=RH_HOLDINGS.map(h=>{
-    const liveP=rhPrices[h.ticker]||h.price;
-    const liveV=parseFloat((h.qty*liveP).toFixed(2));
-    rhTotal+=liveV;
-    return{...h,price:liveP,value:liveV};
+  const liveHoldings = holdingsSource.map(h=>{
+    const liveP = rhPrices[h.ticker] || h.price || 0;
+    const liveV = parseFloat((Number(h.qty||0) * liveP).toFixed(2));
+    rhTotal += liveV;
+    return { ...h, price: liveP, value: liveV };
   });
-  const solVal=parseFloat((SOL_HOLDINGS*solPrice).toFixed(2));
+  const solVal=parseFloat((solHoldings*solPrice).toFixed(2));
   const total=solVal+rhTotal;
   const solEl=document.getElementById('invest-sol-display');
   const rhEl=document.getElementById('invest-rh-display');
@@ -2362,8 +2492,8 @@ function renderInvestments(){
   if(rhBreakdown)rhBreakdown.innerHTML=liveHoldings.map(h=>`
     <div class="ledger-row">
       <span class="ledger-label" style="font-weight:700;color:var(--silver);">${h.ticker}</span>
-      <span style="flex:1;font-size:var(--text-xs);color:var(--text-2);padding-left:var(--s2);">${h.name} · ${h.qty} sh @ $${h.price.toFixed(2)}</span>
-      <span class="ledger-amt">$${h.value.toFixed(2)}</span>
+      <span style="flex:1;font-size:var(--text-xs);color:var(--text-2);padding-left:var(--s2);">${h.name||''} · ${h.qty} sh @ $${(h.price||0).toFixed(2)}</span>
+      <span class="ledger-amt">$${(h.value||0).toFixed(2)}</span>
     </div>`).join('');
   // load CFI notes
   const cfiEl=document.getElementById('cfi-notes');
@@ -2415,7 +2545,7 @@ const QUORA_THREADS=[
    question:'How much does it cost to keep your private pilot\'s license current in the United States?',
    url:'https://www.quora.com/How-much-does-it-cost-to-keep-your-private-pilots-license-current-in-the-United-States',
    answers:6,
-   answer:'Less than getting it, but the costs add up fast if you\'re not strategic about it. Here\'s the actual breakdown:\n\nFAA minimum requirements to stay current:\n\u2022 Flight Review (BFR): every 24 months with a CFI \u2014 typically 1 hr ground + 1 hr flight = $300\u2013$500 depending on your market\n\u2022 To carry passengers: 3 takeoffs and landings in the last 90 days (night currency adds 3 full-stop night landings)\n\u2022 Medical: 3rd class medical every 5 years if under 40, every 2 years if over 40 \u2014 or BasicMed which is a one-time online course + physician visit every 4 years (~$150\u2013$250)\n\nActual recurring costs:\n\u2022 Aircraft rental to stay proficient: $175\u2013$210/hr in high-cost markets (AZ, CA). Flying 2\u20133 hours/month to stay sharp = $350\u2013$630/month\n\u2022 Headset/charts/apps: ForeFlight subscription is $100\u2013$200/yr, which is basically non-negotiable if you\'re flying cross-country\n\u2022 Insurance (if you own): $1,200\u2013$3,000/yr depending on aircraft and experience\n\nBiggest cost lever: join a flying club instead of renting retail. Club rates can be $80\u2013$120/hr vs. $175\u2013$210 at a school \u2014 that\'s a 40\u201350% cut on your biggest recurring expense.\n\nI\'m currently in training at 52 hours in Scottsdale. I put together a guide on the full cost of getting your PPL \u2014 link in my profile if you want the detailed breakdown from someone currently in the process.'},,
+   answer:'Less than getting it, but the costs add up fast if you\'re not strategic about it. Here\'s the actual breakdown:\n\nFAA minimum requirements to stay current:\n\u2022 Flight Review (BFR): every 24 months with a CFI \u2014 typically 1 hr ground + 1 hr flight = $300\u2013$500 depending on your market\n\u2022 To carry passengers: 3 takeoffs and landings in the last 90 days (night currency adds 3 full-stop night landings)\n\u2022 Medical: 3rd class medical every 5 years if under 40, every 2 years if over 40 \u2014 or BasicMed which is a one-time online course + physician visit every 4 years (~$150\u2013$250)\n\nActual recurring costs:\n\u2022 Aircraft rental to stay proficient: $175\u2013$210/hr in high-cost markets (AZ, CA). Flying 2\u20133 hours/month to stay sharp = $350\u2013$630/month\n\u2022 Headset/charts/apps: ForeFlight subscription is $100\u2013$200/yr, which is basically non-negotiable if you\'re flying cross-country\n\u2022 Insurance (if you own): $1,200\u2013$3,000/yr depending on aircraft and experience\n\nBiggest cost lever: join a flying club instead of renting retail. Club rates can be $80\u2013$120/hr vs. $175\u2013$210 at a school \u2014 that\'s a 40\u201350% cut on your biggest recurring expense.\n\nI\'m currently in training at 52 hours in Scottsdale. I put together a guide on the full cost of getting your PPL \u2014 link in my profile if you want the detailed breakdown from someone currently in the process.'},
   {id:'qt6',
    question:'What is the pass rate for the private pilot written exam?',
    url:'https://www.quora.com/What-is-the-pass-rate-for-the-private-pilot-written-exam',
@@ -2483,20 +2613,10 @@ function saveFeedback(id, text){
   const entry = {text: text.trim(), ts: new Date().toISOString()};
   existing.unshift(entry);
   const trimmed = existing.slice(0, 10); // keep last 10 entries
-  ss(key, trimmed);
+  ss(key, trimmed); // ss() now routes feedback_ to backend state via SYNC_KEYS
   // Phase 3: also push feedback to the vault.
   if(typeof postTaskFeedback === 'function') postTaskFeedback(id, text.trim());
-  // Push to Firebase
-  const uid = localStorage.getItem('_cockpit_uid');
-  if(uid && window._fbDB){
-    window._fbDB.ref('users/'+uid+'/task_feedback/'+id).set({
-      entries: trimmed,
-      last_updated: new Date().toISOString(),
-    }).then(()=>toast('Noted \u2714 \u2014 I\'ll factor this in tonight'))
-      .catch(()=>toast('Noted \u2714'));
-  } else {
-    toast('Noted \u2714');
-  }
+  toast('Noted \u2714');
   // Clear input
   const el = document.getElementById('fb-input-'+id);
   if(el){ el.value=''; el.style.height='auto'; }
@@ -2546,32 +2666,14 @@ function savePostLink(type, id, url){
   const localKey = type==='task' ? 'ntlink_'+id
                : type==='reddit_post' ? 'rplink_'+id
                : type[0]+'link_'+id;
-  ss(localKey, url);
+  ss(localKey, url); // ss() now routes link prefixes to backend state via SYNC_KEYS
   const statusId = type==='quora' ? 'qlink-status-'+id
                  : type==='reddit' ? 'rlink-status-'+id
                  : type==='reddit_post' ? 'rplink-status-'+id
                  : 'ntlink-status-'+id;
-  const fbPath = type==='task' ? 'posted_links/tasks/'+id
-               : type==='reddit_post' ? 'posted_links/reddit_posts/'+id
-               : 'posted_links/'+type+'/'+id;
-  const uid = localStorage.getItem('_cockpit_uid');
-  if(uid && window._fbDB){
-    window._fbDB.ref('users/'+uid+'/'+fbPath).set({
-      url: url, type: type, id: id, saved_at: new Date().toISOString(),
-    }).then(()=>{
-      const el = document.getElementById(statusId);
-      if(el) el.textContent = '\u2714 Saved \u2014 I\'ll check engagement in the morning';
-      toast('Link saved \u2014 I\'ll check it tonight');
-    }).catch(()=>{
-      const el = document.getElementById(statusId);
-      if(el) el.textContent = 'Saved locally \u2714';
-      toast('Saved locally');
-    });
-  } else {
-    const el = document.getElementById(statusId);
-    if(el) el.textContent = 'Saved \u2714';
-    toast('Link saved');
-  }
+  const el = document.getElementById(statusId);
+  if(el) el.textContent = 'Saved \u2714';
+  toast('Link saved');
 }
 
 function copyQuoraAnswer(id){
@@ -2708,9 +2810,9 @@ function renderRedditThreads(){
         <button onclick="toggleRedditDone('${t.id}')" style="flex-shrink:0;font-size:.6rem;font-weight:700;padding:5px 10px;border-radius:8px;background:rgba(248,113,113,.12);color:var(--crimson);border:1px solid var(--crimson);cursor:pointer;white-space:nowrap;">Done ✓</button>
       </div>
       <div style="font-size:.62rem;color:var(--text-3);margin-bottom:var(--s2);font-style:italic;">${t.angle||''}</div>
-      <div style="font-size:.65rem;color:var(--text-2);line-height:1.7;background:var(--surface-3);border-radius:8px;padding:8px 10px;margin-bottom:var(--s2);">${t.comment}</div>
+      <div id="rt-comment-${t.id}" style="font-size:.65rem;color:var(--text-2);line-height:1.7;background:var(--surface-3);border-radius:8px;padding:8px 10px;margin-bottom:var(--s2);">${t.comment}</div>
       <div style="display:flex;gap:6px;">
-        <button onclick="navigator.clipboard.writeText(document.querySelector('#rtcard-${t.id} .rt-comment-text')||'').then(()=>toast('Comment copied'))" style="font-size:.6rem;padding:4px 10px;border-radius:8px;background:var(--surface-3);border:1px solid var(--border);color:var(--text-2);cursor:pointer;" onclick="copyRTComment('${t.id}')">Copy Comment</button>
+        <button onclick="navigator.clipboard.writeText(document.getElementById('rt-comment-${t.id}').textContent).then(()=>toast('Comment copied'))" style="font-size:.6rem;padding:4px 10px;border-radius:8px;background:var(--surface-3);border:1px solid var(--border);color:var(--text-2);cursor:pointer;">Copy Comment</button>
         <a href="${t.url}" target="_blank" style="font-size:.6rem;color:var(--blue);text-decoration:none;background:var(--surface-3);padding:4px 10px;border-radius:8px;border:1px solid var(--border);">Open Thread ↗</a>
       </div>
       ${feedbackBlock(t.id)}
@@ -2809,15 +2911,15 @@ const REELS=[
    caption:'sunset taxi. hour 53. most kids my age are on snapchat. i\'m taxiing a $300/hr airplane. every hour costs $300 of my own money. read how. link in bio.\n\n#studentpilot #goldenhour #ppl #cessna #aviation #cockpitgrind #pilotlife #flightschool #avgeek #scottsdale',
    music:{title:'Snowfall',artist:'\u00d8neheart x reidenshi'},
    note:'Use 0:15\u20130:43. Golden-hour cockpit taxi. Cinematic, lonely. Let the sunset do the work.'},
+  {id:'r5',name:'R5 \u2014 Ebook Promo \u2605 (POSTED)',tag:'POSTED Apr 26 2026 \u2014 Benchmark reel',posted:true,
+   caption:'The Real Cost of Getting Your PPL \u2014 nobody told me this.\n\nFuel burns. Instructor fees. Exam costs. Hidden fees.\n\nI put everything in one place so you don\'t get blindsided.\n\n18 & learning to fly. This is the guide I wish I had.\n\n\u2193 Link in bio \u2014 $17.\n\n#ppl #flighttraining #studentpilot #learntofly #aviation',
+   music:{title:'Holocene',artist:'Bon Iver'},
+   note:'BENCHMARK \u2014 minimum standard for all future reels.'},
   {id:'r6',name:'R6 \u2014 Outside the Fence',tag:'dropbox',
    dbUrl:'https://www.dropbox.com/scl/fi/lbj7gm6aeiafgaaa053aj/cockpit_grind_3_reels.zip?rlkey=bkqarzucyc5g923owvdb88xqx',dbName:'reel_C_REDACTED.mp4',posted:false,
    caption:'everyone sees this. nobody sees the $91,000 bill. i\'m 18 and i track every dollar. most never start. read why. link in bio.\n\n#studentpilot #aviation #flightschool #ppl #cockpitgrind #pilotlife #avgeek #cessna #scottsdale #pilottraining',
    music:{title:'where\'s my love (sad version)',artist:'SYML'},
-   note:'Use 0:10\u20130:32. Ramp footage through chain-link fence. \u201cKid pressed against the fence\u201d POV. Hook lands hard on the $91k reveal.'},
-  {id:'r5',name:'R5 \u2014 Ebook Promo \u2605 (POSTED)',tag:'POSTED Apr 26 2026 \u2014 Benchmark reel',posted:true,
-   caption:'The Real Cost of Getting Your PPL \u2014 nobody told me this.\n\nFuel burns. Instructor fees. Exam costs. Hidden fees.\n\nI put everything in one place so you don\'t get blindsided.\n\n18 & learning to fly. This is the guide I wish I had.\n\n\u2193 Link in bio \u2014 $17.\n\n#ppl #flighttraining #studentpilot #learntofly #aviation',
-   music:{title:'Holocene',artist:'Bon Iver'},
-   note:'BENCHMARK \u2014 minimum standard for all future reels.'}
+   note:'Use 0:10\u20130:32. Ramp footage through chain-link fence. \u201cKid pressed against the fence\u201d POV. Hook lands hard on the $91k reveal.'}
 ];
 
 function switchCTab(name, btn){
@@ -2875,13 +2977,13 @@ function renderContent(){
         <div class="reel-status-dot ${isPosted?'posted':'ready'}"></div>
         <div style="flex:1">
           <div class="reel-card-name">${r.name}</div>
-          <div class="reel-card-tag">${r.tag==='dropbox'?'📁 '+r.dbName+' — Dropbox':r.tag}</div>
+          <div class="reel-card-tag">${r.tag==='dropbox' && r.dbName ? '📁 '+r.dbName+' — Dropbox' : r.tag}</div>
         </div>
         <span class="pill ${isPosted?'pill-green':'pill-blue'}" style="margin-right:var(--s2)">${isPosted?'Posted':'Ready'}</span>
         <svg class="reel-expand-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="reel-card-body">
-        ${r.tag==='dropbox'?`<div class="reel-section-label">Dropbox File</div><a href="${r.dbUrl}" target="_blank" style="display:flex;align-items:center;gap:var(--s3);background:var(--surface-3);border-radius:var(--r-md);padding:var(--s3) var(--s4);margin-bottom:var(--s3);text-decoration:none;"><span style="font-size:1rem;">📂</span><div style="flex:1;"><div style="font-size:var(--text-sm);font-weight:600;color:var(--blue);">${r.dbName}</div><div style="font-size:var(--text-xs);color:var(--text-2);">Tap to open in Dropbox → download from there</div></div><span style="color:var(--blue);font-size:0.8rem;">↗</span></a>`:''}
+        ${(r.tag==='dropbox' && r.dbUrl) ? `<div class="reel-section-label">Dropbox File</div><a href="${r.dbUrl}" target="_blank" style="display:flex;align-items:center;gap:var(--s3);background:var(--surface-3);border-radius:var(--r-md);padding:var(--s3) var(--s4);margin-bottom:var(--s3);text-decoration:none;"><span style="font-size:1rem;">📂</span><div style="flex:1;"><div style="font-size:var(--text-sm);font-weight:600;color:var(--blue);">${r.dbName}</div><div style="font-size:var(--text-xs);color:var(--text-2);">Tap to open in Dropbox → download from there</div></div><span style="color:var(--blue);font-size:0.8rem;">↗</span></a>` : ''}
         <div class="reel-section-label">Music</div>
         <div class="reel-music">
           <div class="reel-music-icon">🎵</div>
@@ -3048,7 +3150,7 @@ async function sendTaskFeedback(taskId){
   // Phase 3: tasks come from the vault. Adapt shape — title/tags instead of content/project.
   const task = (TODOIST_TASKS||[]).find(x=>x.id===taskId);
   if(!task){ toast('Task not found'); return; }
-  const token = localStorage.getItem('_cockpit_admin_token')||'';
+  const token = getToken();
   if(!token){ toast('⚠ Not authenticated'); return; }
   // Push the feedback to the vault first so it's preserved as a permanent record.
   if(typeof postTaskFeedback === 'function') postTaskFeedback(taskId, text);
@@ -3070,7 +3172,7 @@ async function sendTaskFeedback(taskId){
   try {
     const res = await fetch('/api/chat/message', {
       method: 'POST',
-      headers: _chatApiHeaders(),
+      headers: apiHeaders(),
       body: JSON.stringify({ text: msg, role: 'user', context_tab: 'today', tab_context: tab_context })
     });
     const j = await res.json();
@@ -3185,40 +3287,6 @@ function renderDiscipline(){
     out='<div style="text-align:center;padding:var(--s4);color:var(--green);font-weight:700;">All Todoist tasks cleared. 🔥</div>';
   }
   document.getElementById('disc-factors').innerHTML=out;
-}
-
-function toggleDisciplineFactor(id,el){
-  const today=todayKey();
-  // Handle special factors
-  if(id==='wake'||id==='sleep'){
-    const key='disc_'+id+'_'+today;
-    const val=!ls(key,false);ss(key,val);
-    el.className='task-chip-check'+(val?' done':'');el.textContent=val?'✓':'';
-    renderDiscipline();return;
-  }
-  if(id==='mission'){toggleMission();return;}
-  // Google task
-  const done=ls('tasks_done_'+today,{});
-  done[id]=!done[id];ss('tasks_done_'+today,done);
-  el.className='task-chip-check'+(done[id]?' done':'');el.textContent=done[id]?'✓':'';
-  renderDiscipline();renderToday();
-}
-
-function renderWeekGrid(){
-  const el=document.getElementById('week-grid');if(!el)return;
-  const now=new Date();el.innerHTML='';
-  for(let i=6;i>=0;i--){
-    const d=new Date(now);d.setDate(d.getDate()-i);
-    const key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    const isToday=i===0;
-    const doneMission=ls('mission_done_day','')==key;
-    const label=d.toLocaleDateString('en-US',{weekday:'narrow'});
-    const pip=document.createElement('div');
-    pip.className='week-pip';
-    pip.innerHTML=`<div class="week-pip-label">${label}</div>
-      <div class="week-pip-dot ${doneMission?'done':''} ${isToday?'today':''}">${doneMission?'✓':'·'}</div>`;
-    el.appendChild(pip);
-  }
 }
 
 // ── EXPORT/IMPORT ──
@@ -3342,9 +3410,50 @@ function getScheduleBlocks(){
   return base.sort((a,b)=>a.start-b.start);
 }
 
+// ── HEADER OVERFLOW MENU (H1) ──
+// Shown only at narrow widths (<=700px) via CSS. The menu element lives in
+// the header markup; this just toggles visibility and wires up close-on-
+// outside-click and Escape-to-close. Listeners attach only while open so
+// there's no work happening when the menu is closed.
+function toggleHeaderOverflow(e){
+  if(e && typeof e.stopPropagation === 'function') e.stopPropagation();
+  const menu = document.getElementById('header-overflow-menu');
+  const toggle = document.querySelector('.header-overflow-toggle');
+  if(!menu) return;
+  if(menu.hasAttribute('hidden')){
+    menu.removeAttribute('hidden');
+    if(toggle) toggle.setAttribute('aria-expanded','true');
+    // Use setTimeout so the click that opened the menu doesn't immediately close it
+    setTimeout(()=>{
+      document.addEventListener('click', _headerOverflowOutsideClick);
+      document.addEventListener('keydown', _headerOverflowEscapeKey);
+    }, 0);
+  } else {
+    closeHeaderOverflow();
+  }
+}
+function closeHeaderOverflow(){
+  const menu = document.getElementById('header-overflow-menu');
+  const toggle = document.querySelector('.header-overflow-toggle');
+  if(!menu) return;
+  menu.setAttribute('hidden','');
+  if(toggle) toggle.setAttribute('aria-expanded','false');
+  document.removeEventListener('click', _headerOverflowOutsideClick);
+  document.removeEventListener('keydown', _headerOverflowEscapeKey);
+}
+function _headerOverflowOutsideClick(e){
+  const menu = document.getElementById('header-overflow-menu');
+  const toggle = document.querySelector('.header-overflow-toggle');
+  if(!menu || menu.hasAttribute('hidden')) return;
+  if(menu.contains(e.target) || (toggle && toggle.contains(e.target))) return;
+  closeHeaderOverflow();
+}
+function _headerOverflowEscapeKey(e){
+  if(e.key === 'Escape') closeHeaderOverflow();
+}
+
 // ── SYNC PANEL UI ──
-function showSyncPanel(){
-  const panel = document.getElementById('sync-panel');
+function showSyncPanel(){  const panel = document.getElementById('sync-panel');
   // Show the backend URL as the "sync ID" — all devices hitting the same backend share state
   const backendOrigin = window.location.origin;
   const syncId = document.getElementById('sync-uid-display');
@@ -3363,13 +3472,11 @@ function showSyncPanel(){
 function hideSyncPanel(){
   document.getElementById('sync-panel').style.display = 'none';
 }
-function copySyncID(){
-  const uid = localStorage.getItem('_cockpit_uid') || '';
-  navigator.clipboard.writeText(uid).then(()=>toast('Sync ID copied!')).catch(()=>{
-    const el = document.getElementById('sync-uid-display');
-    el.select(); document.execCommand('copy'); toast('Sync ID copied!');
-  });
-}
+// C4: copySyncID is defined at the top of the file (~line 204) where it
+// reads from the sync-uid-display input — the same input showSyncPanel()
+// populates with the backend origin. A duplicate definition here previously
+// read from localStorage._cockpit_uid which never matched what the user saw
+// in the panel.
 function pairDevice(){
   // Cross-device sync is now handled via the shared Cockpit backend.
   // All devices that share the same admin token and connect to the same
@@ -3390,6 +3497,11 @@ if(typeof window._updateSyncDot === 'undefined'){
 // Backend sync (pull state + start polling) is kicked off by the
 // Cockpit Backend Sync Layer script above via its own DOMContentLoaded handler.
 document.addEventListener('DOMContentLoaded',()=>{
+  // M4: seed composer mode from the active tab in the DOM. Previously this
+  // was only set on the first tab click, which broke silently if the active
+  // tab class was reordered (submitComposer fell back to 'chat' regardless).
+  const activeTab = document.querySelector('.composer-tab.active');
+  window._composerMode = (activeTab && activeTab.dataset.mode) || 'chat';
   renderToday();
   renderSchedule();
   renderContent();
@@ -3423,9 +3535,6 @@ document.addEventListener('DOMContentLoaded',()=>{
 -->
 <script>
 (function(){
-  function getToken(){
-    try { return localStorage.getItem('_cockpit_admin_token') || ''; } catch(_) { return ''; }
-  }
   function setPill(color, lines){
     var dot = document.getElementById('vault-dot');
     var btn = document.getElementById('vault-btn');
@@ -3442,7 +3551,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       return;
     }
     try {
-      var res = await fetch('/api/vault/status', { headers: { 'Authorization': 'Bearer ' + token }});
+      var res = await fetch('/api/vault/status', { headers: apiHeaders()});
       if(!res.ok){
         setPill('var(--text-3)', ['Vault status: HTTP ' + res.status]);
         return;

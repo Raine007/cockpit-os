@@ -377,16 +377,17 @@ async function handleReadyz(): Promise<CockpitHttpResponse> {
 
 /**
  * GET /api/state \u2014 returns all key-value pairs for the authenticated user.
- * Query param `uid` defaults to "default" for the single-user deployment;
- * present as a forward-compat hook for multi-user future.
+ * State endpoints write under a fixed "default" uid -- this is a
+ * single-user deployment. If multi-user is ever needed, add proper
+ * identity-claim validation; never let an arbitrary `?uid=` query
+ * param decide which bucket a request reads from or writes to (M10).
  */
 async function handleGetAllState(
   req: CockpitHttpRequest,
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  const state = await getAllState(ctx, uid);
+  const state = await getAllState(ctx, 'default');
   return jsonResponse(200, { ok: true, state });
 }
 
@@ -397,8 +398,7 @@ async function handleGetState(
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  const value = await getState(ctx, uid, key);
+  const value = await getState(ctx, 'default', key);
   return jsonResponse(200, { ok: true, key, value });
 }
 
@@ -411,8 +411,7 @@ async function handleSetState(
   const body = (req.body ?? {}) as Record<string, unknown>;
   if (!('value' in body)) return badRequest('missing "value" in body');
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  await setState(ctx, uid, key, body.value);
+  await setState(ctx, 'default', key, body.value);
   return jsonResponse(200, { ok: true });
 }
 
@@ -423,9 +422,48 @@ async function handleDeleteState(
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const uid = req.query?.uid ?? 'default';
-  await deleteState(ctx, uid, key);
+  await deleteState(ctx, 'default', key);
   return jsonResponse(200, { ok: true });
+}
+
+/**
+ * GET /api/market/snapshot — aggregated view of the user's live financial
+ * state for the Money tab. Reads five state keys and returns them in one
+ * payload so the front-end only needs one round trip on view-mount.
+ *
+ * State keys (all optional — UI must handle missing values gracefully):
+ *   plaid_balances        — array of { label: string, amount: number }
+ *                           amount > 0 for assets, < 0 for liabilities
+ *   robinhood_holdings    — array of { ticker, name, qty, price?, value? }
+ *   sol_price             — number (USD)
+ *   sol_holdings          — number (SOL units)
+ *   market_snapshot_as_of — ISO timestamp string set by whoever last seeded
+ *                           the above keys (heartbeat-service or manual PUT)
+ *
+ * Until the heartbeat-service is wired up to refresh these nightly, seed
+ * via PUT /api/state/{key} from a script or Cloud Shell.
+ */
+async function handleMarketSnapshot(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const uid = 'default';
+  const [cash, holdings, solPrice, solHoldings, asOf] = await Promise.all([
+    getState(ctx, uid, 'plaid_balances'),
+    getState(ctx, uid, 'robinhood_holdings'),
+    getState(ctx, uid, 'sol_price'),
+    getState(ctx, uid, 'sol_holdings'),
+    getState(ctx, uid, 'market_snapshot_as_of'),
+  ]);
+  return jsonResponse(200, {
+    ok: true,
+    cash: cash ?? null,
+    holdings: holdings ?? null,
+    sol_price: solPrice ?? null,
+    sol_holdings: solHoldings ?? null,
+    asOf: asOf ?? null,
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -513,8 +551,13 @@ async function enqueueDailyNoteJob(
       updated_at: ts,
     };
     await upsertVaultJob(ctx, job);
-  } catch (_) {
-    /* never let vault enqueue failure surface to chat callers */
+  } catch (err) {
+    // M7: still swallowing — chat callers must not break if the vault
+    // enqueue fails — but leave a breadcrumb in logs so we can find
+    // these silent failures when something is off.
+    logger.warn('vault enqueue failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
@@ -897,6 +940,13 @@ async function handleVaultJobResult(
   const jobs = await getVaultJobs(ctx);
   const job = jobs.find((j) => j.id === jobId);
   if (!job) return badRequest(`vault job "${jobId}" not found`);
+
+  // M8: bridge can retry the result POST after a network glitch. Without
+  // this guard, writes_today would increment twice for one logical write,
+  // and the audit log would record duplicate completion events.
+  if (job.status === 'done' || job.status === 'error') {
+    return jsonResponse(200, { ok: true, already_completed: true });
+  }
 
   const ts = new Date().toISOString();
   const updated: VaultJob = {
@@ -1363,6 +1413,12 @@ const STATIC_ROUTES: CockpitRoute[] = [
     path: '/api/dashboard/identities',
     description: 'List identities for a uid',
     handler: handleDashboardIdentities,
+  },
+  {
+    method: 'GET',
+    path: '/api/market/snapshot',
+    description: 'Live cash + holdings + crypto snapshot for the Money tab',
+    handler: handleMarketSnapshot,
   },
   {
     method: 'POST',
