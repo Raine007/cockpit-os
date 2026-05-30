@@ -92,6 +92,8 @@ import type {
   CockpitHttpResponse,
   CockpitRoute,
 } from './types.js';
+import { drive } from '../dispatcher/engine.js';
+import { JOB_STATUSES, type CockpitJob, type JobStatus } from '../dispatcher/types.js';
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
@@ -1306,6 +1308,109 @@ async function handleStatic(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Jobs drive / list                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * POST /api/jobs/drive — claim and drive up to 5 queued jobs.
+ *
+ * Polls the Firestore `jobs` collection for status == 'queued' and runs each
+ * through drive() from the dispatcher engine. Returns per-job success/error
+ * tracking. Designed to be hit on a cron (every minute) by Cloud Scheduler.
+ */
+async function handleJobsDrive(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+
+  const ctx = createContext({ uid: 'system', source: 'cron' });
+
+  const snap = await ctx.db
+    .collection('jobs')
+    .where('status', '==', 'queued')
+    .limit(5)
+    .get();
+
+  const results: Array<{
+    id: string;
+    ok: boolean;
+    status?: JobStatus;
+    error?: string;
+  }> = [];
+
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const doc of snap.docs) {
+    const id = doc.id;
+    try {
+      const { job, result } = await drive(id);
+      if (result.ok) {
+        succeeded += 1;
+        results.push({ id, ok: true, status: job.status });
+      } else {
+        failed += 1;
+        results.push({
+          id,
+          ok: false,
+          status: job.status,
+          error: result.error ?? 'unknown error',
+        });
+      }
+    } catch (err) {
+      failed += 1;
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.log.error('drive threw', { jobId: id, error: message });
+      results.push({ id, ok: false, error: message });
+    }
+  }
+
+  return jsonResponse(200, {
+    ok: true,
+    driven: snap.docs.length,
+    succeeded,
+    failed,
+    results,
+  });
+}
+
+/**
+ * GET /api/jobs?status=&limit= — list jobs from Firestore.
+ *
+ * Optional `status` filter (must be a valid JobStatus) and `limit` (1-100,
+ * default 50).
+ */
+async function handleJobsList(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+
+  const status = req.query?.status as string | undefined;
+  const limit = Math.min(
+    Math.max(parseInt((req.query?.limit as string | undefined) || '50', 10) || 50, 1),
+    100,
+  );
+
+  if (status && !(JOB_STATUSES as readonly string[]).includes(status)) {
+    return badRequest(
+      `invalid status "${status}"; expected one of ${JOB_STATUSES.join(', ')}`,
+    );
+  }
+
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+
+  let query = ctx.db.collection('jobs') as FirebaseFirestore.Query;
+  if (status) {
+    query = query.where('status', '==', status);
+  }
+  const snap = await query.limit(limit).get();
+
+  const jobs = snap.docs.map((doc) => doc.data() as CockpitJob);
+
+  return jsonResponse(200, { ok: true, count: jobs.length, jobs });
+}
+
+/* -------------------------------------------------------------------------- */
 /* Route table                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -1375,6 +1480,18 @@ const STATIC_ROUTES: CockpitRoute[] = [
     path: '/api/identities/revoke',
     description: 'Revoke a channel identity (admin)',
     handler: handleRevokeIdentity,
+  },
+  {
+    method: 'POST',
+    path: '/api/jobs/drive',
+    description: 'Claim and drive up to 5 queued jobs (admin/cron)',
+    handler: handleJobsDrive,
+  },
+  {
+    method: 'GET',
+    path: '/api/jobs',
+    description: 'List jobs with optional status filter and limit (admin)',
+    handler: handleJobsList,
   },
   {
     method: 'GET',
