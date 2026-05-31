@@ -1411,6 +1411,44 @@ async function handleJobsList(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Content Calendar handler                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** GET /api/content-calendar — list scheduled posts. */
+async function handleContentCalendar(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const limit = Math.min(
+    Math.max(parseInt((req.query?.limit as string | undefined) || '20', 10) || 20, 1),
+    100,
+  );
+  const snap = await ctx.db.collection('content_calendar').orderBy('schedule_date', 'desc').limit(limit).get();
+  const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  return jsonResponse(200, { ok: true, items });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Email Triage handler                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** GET /api/email-triage — list emails needing triage. */
+async function handleEmailTriage(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const limit = Math.min(
+    Math.max(parseInt((req.query?.limit as string | undefined) || '10', 10) || 10, 1),
+    50,
+  );
+  const snap = await ctx.db.collection('email_triage').orderBy('received_at', 'desc').limit(limit).get();
+  const emails = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  return jsonResponse(200, { ok: true, emails });
+}
+
+/* -------------------------------------------------------------------------- */
 /* Route table                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -1492,6 +1530,18 @@ const STATIC_ROUTES: CockpitRoute[] = [
     path: '/api/jobs',
     description: 'List jobs with optional status filter and limit (admin)',
     handler: handleJobsList,
+  },
+  {
+    method: 'GET',
+    path: '/api/content-calendar',
+    description: 'List scheduled content calendar posts (admin)',
+    handler: handleContentCalendar,
+  },
+  {
+    method: 'GET',
+    path: '/api/email-triage',
+    description: 'List emails needing triage (admin)',
+    handler: handleEmailTriage,
   },
   {
     method: 'GET',
