@@ -414,11 +414,36 @@ tr:last-child td { border-bottom: none; }
   .scroll-y { max-height: 300px; }
 }
 @media (max-width: 500px) {
-  .logo { font-size: 15px; }
-  .status-bar { gap: 8px; padding: 6px 12px; }
-  .btn { padding: 5px 10px; font-size: 11px; }
+  .logo { font-size: 16px; }
+  .header { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  .token-group { max-width: 100%; flex: none; }
+  .token-group input { min-width: 0; font-size: 14px; padding: 10px 12px; }
+  .header-actions { margin-left: 0; justify-content: flex-end; }
+  .btn { padding: 8px 14px; font-size: 13px; }
+  .status-bar { gap: 8px; padding: 6px 12px; font-size: 12px; }
   .main-grid { padding: 10px; gap: 10px; }
+  .panel-body { padding: 8px 10px; overflow-x: auto; }
+  table { font-size: 12px; display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  th, td { padding: 8px 10px; }
+  .scroll-y { max-height: 250px; }
+  body { font-size: 14px; }
 }
+
+/* Calendar detail expansion */
+.calendar-detail td { padding: 0; border-bottom: 1px solid var(--border); }
+.detail-card {
+  background: var(--bg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.detail-caption { color: var(--text); font-size: 13px; line-height: 1.6; white-space: normal; }
+.detail-meta { color: var(--text-dim); font-size: 12px; }
+.detail-meta a { color: var(--cyan); text-decoration: underline; }
+.detail-actions { display: flex; gap: 8px; margin-top: 4px; }
+tr.expanded td { background: rgba(0,212,255,0.05); }
+
 </style>
 </head>
 <body>
@@ -748,6 +773,28 @@ function renderTasks(data) {
 }
 
 // --- RENDER: CONTENT CALENDAR ---
+function toggleCalendarDetail(row, post) {
+  const existing = row.nextElementSibling;
+  if (existing && existing.classList.contains('calendar-detail')) {
+    existing.remove();
+    row.classList.remove('expanded');
+    return;
+  }
+  row.classList.add('expanded');
+  const detail = document.createElement('tr');
+  detail.className = 'calendar-detail';
+  detail.innerHTML = '<td colspan="5"><div class="detail-card">' +
+    '<div class="detail-caption">' + esc(post.caption || '') + '</div>' +
+    (post.song ? '<div class="detail-meta">🎵 ' + esc(post.song) + '</div>' : '') +
+    (post.videoUrl ? '<div class="detail-meta">📹 <a href="' + esc(post.videoUrl) + '" target="_blank" onclick="event.stopPropagation()">Watch Video</a></div>' : '') +
+    '<div class="detail-actions">' +
+      '<button class="btn primary" onclick="event.stopPropagation();alert(\'Post action for: ' + esc(post.id || '') + '\')">📤 Post Now</button>' +
+      '<button class="btn" onclick="event.stopPropagation();navigator.clipboard.writeText(\'' + (post.caption || '').replace(/'/g, "\\'") + '\').then(function(){alert(\'Caption copied!\')})">📋 Copy Caption</button>' +
+    '</div>' +
+  '</div></td>';
+  row.parentNode.insertBefore(detail, row.nextSibling);
+}
+
 function renderCalendar(data) {
   const body = document.getElementById('calendarBody');
   const count = document.getElementById('calendarCount');
@@ -769,7 +816,7 @@ function renderCalendar(data) {
     const caption = (post.caption || post.title || '').substring(0, 50);
     const status = (post.status || 'draft').toLowerCase();
     const tags = Array.isArray(post.hashtags) ? post.hashtags.join(' ') : (post.hashtags || '');
-    html += '<tr>';
+    html += '<tr onclick="toggleCalendarDetail(this, ' + JSON.stringify(post).replace(/'/g, '&#39;') + ')" data-id="' + esc(post.id || '') + '" style="cursor:pointer">';
     html += '<td>' + esc(date) + '</td>';
     html += '<td>' + esc(platform) + '</td>';
     html += '<td>' + esc(caption) + '</td>';
@@ -811,10 +858,10 @@ async function refreshAll() {
     safeApiFetch('/api/content-calendar')
   ]);
 
-  renderJobs(jobs);
-  renderEmails(emails);
-  renderTasks(tasks);
-  renderCalendar(calendar);
+  renderJobs(jobs?.jobs || []);
+  renderEmails(emails?.emails || []);
+  renderTasks(tasks?.tasks || []);
+  renderCalendar(calendar?.items || []);
   updateRefreshTime();
 }
 
