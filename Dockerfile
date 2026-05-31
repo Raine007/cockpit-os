@@ -17,6 +17,7 @@ RUN npm ci --no-audit --no-fund
 
 # Copy source and build.
 COPY tsconfig.json ./
+# cache-bust: cd66cd4
 COPY src ./src
 RUN npm run build
 
