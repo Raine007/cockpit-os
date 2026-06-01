@@ -1436,6 +1436,39 @@ async function handleContentCalendar(
   }
 }
 
+/** POST /api/content/post — get post data for Instagram posting. */
+async function handleContentPost(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  try {
+    const body = req.body as any;
+    const postId = body?.id;
+    if (!postId) return jsonResponse(400, { ok: false, error: 'missing id' });
+    const doc = await ctx.db.collection('user_state').doc('default__content_calendar').get();
+    if (!doc.exists) return jsonResponse(404, { ok: false, error: 'no calendar data' });
+    const data = doc.data();
+    const items: any[] = data?.value || data?.items || [];
+    const post = items.find((p: any) => (p.id || p.scheduled_date) === postId);
+    if (!post) return jsonResponse(404, { ok: false, error: 'post not found' });
+    return jsonResponse(200, {
+      ok: true,
+      post: {
+        id: post.id || postId,
+        caption: post.caption || '',
+        hashtags: post.hashtags || [],
+        platform: post.platform || 'instagram',
+        video_url: post.video_url || '',
+        song: post.song || '',
+      },
+    });
+  } catch (err: any) {
+    console.error('content-post error:', err.message);
+    return jsonResponse(500, { ok: false, error: err.message });
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Email Triage handler                                                        */
 /* -------------------------------------------------------------------------- */
@@ -1570,6 +1603,12 @@ const STATIC_ROUTES: CockpitRoute[] = [
     path: '/api/content-calendar',
     description: 'List scheduled content calendar posts (admin)',
     handler: handleContentCalendar,
+  },
+  {
+    method: 'POST',
+    path: '/api/content/post',
+    description: 'Get post data by ID for Instagram posting (admin)',
+    handler: handleContentPost,
   },
   {
     method: 'GET',

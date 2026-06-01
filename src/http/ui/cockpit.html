@@ -432,7 +432,8 @@ tr:last-child td { border-bottom: none; }
 /* RESPONSIVE */
 @media (max-width: 900px) {
   .main-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 10px;
     padding: 10px 10px 20px;
   }
@@ -444,9 +445,13 @@ tr:last-child td { border-bottom: none; }
   .header-actions { margin-left: 0; }
   table { font-size: 11px; }
   th, td { padding: 5px 6px; }
-  .scroll-y { max-height: 220px; }
+  .scroll-y { max-height: none; overflow-y: visible; }
   .panel-header { padding: 8px 10px; font-size: 12px; }
   .panel-body { padding: 6px 10px; }
+  /* Calendar: cards on mobile */
+  .cal-desktop { display: none; }
+  .cal-mobile { display: block; }
+  .cal-card.expanded { border-color: var(--cyan); background: rgba(0,212,255,0.03); }
 }
 @media (max-width: 500px) {
   .logo { font-size: 16px; }
@@ -463,10 +468,6 @@ tr:last-child td { border-bottom: none; }
   .scroll-y { max-height: none; overflow-y: visible; }
   body { font-size: 14px; }
   .panel-header { padding: 8px 10px; font-size: 13px; }
-  /* Calendar: cards on mobile */
-  .cal-desktop { display: none; }
-  .cal-mobile { display: block; }
-  .cal-card.expanded { border-color: var(--cyan); background: rgba(0,212,255,0.03); }
 }
 
 /* Calendar detail expansion */
@@ -533,7 +534,7 @@ tr.expanded td { background: rgba(0,212,255,0.05); }
   </div>
 
   <!-- DAILY TASKS (middle-left) -->
-  <div class="panel" style="grid-row: span 1;">
+  <div class="panel">
     <div class="panel-header">✓ DAILY TASKS <span class="count" id="tasksCount"></span></div>
     <div class="panel-body scroll-y" id="tasksBody">
       <div class="loading">Loading tasks</div>
@@ -541,7 +542,7 @@ tr.expanded td { background: rgba(0,212,255,0.05); }
   </div>
 
   <!-- CONTENT CALENDAR (middle-right) -->
-  <div class="panel" style="grid-row: span 1;">
+  <div class="panel">
     <div class="panel-header">📅 CONTENT CALENDAR <span class="count" id="calendarCount"></span></div>
     <div class="panel-body scroll-y" id="calendarBody">
       <div class="loading">Loading calendar</div>
@@ -828,13 +829,57 @@ function toggleCalendarDetail(row, post) {
 }
 
 function postNow(id) {
-  alert('Post action for: ' + id);
+  var row = document.querySelector('[data-id="' + id + '"]');
+  var post = row ? JSON.parse(row.getAttribute('data-post') || '{}') : {};
+  var caption = post.caption || '';
+
+  // Call backend to get full post data
+  fetch(API_BASE + '/api/content/post', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+    body: JSON.stringify({ id: id })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.ok && data.post) {
+      caption = data.post.caption || caption;
+      var hashtags = Array.isArray(data.post.hashtags) ? data.post.hashtags.join(' ') : '';
+      var fullText = caption + (hashtags ? '\n.\n' + hashtags : '');
+      navigator.clipboard.writeText(fullText).then(function() {
+        showToast('📋 Caption + hashtags copied! Open Instagram to post.');
+        var ig = 'instagram://camera';
+        var w = window.open(ig, '_blank');
+        if (!w || w.closed) { window.open('https://www.instagram.com/', '_blank'); }
+      });
+    } else {
+      // Fallback: use data from DOM
+      navigator.clipboard.writeText(caption).then(function() {
+        showToast('📋 Caption copied! Open Instagram to post.');
+        window.open('https://www.instagram.com/', '_blank');
+      });
+    }
+  }).catch(function() {
+    navigator.clipboard.writeText(caption).then(function() {
+      showToast('📋 Caption copied! Paste in Instagram.');
+    });
+  });
 }
 
 function copyCaption(id) {
-  const row = document.querySelector('[data-id="' + id + '"]');
-  const post = row ? JSON.parse(row.getAttribute('data-post') || '{}') : {};
-  navigator.clipboard.writeText(post.caption || '').then(function(){ alert('Caption copied!'); });
+  var row = document.querySelector('[data-id="' + id + '"]');
+  var post = row ? JSON.parse(row.getAttribute('data-post') || '{}') : {};
+  navigator.clipboard.writeText(post.caption || '').then(function() {
+    showToast('📋 Caption copied!');
+  });
+}
+
+// Toast notification
+function showToast(msg) {
+  var t = document.createElement('div');
+  t.className = 'email-act-toast';
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--cyan);color:var(--bg);padding:10px 20px;border-radius:6px;font-size:13px;font-weight:600;z-index:999;opacity:0;transition:opacity 0.3s;';
+  document.body.appendChild(t);
+  requestAnimationFrame(function() { t.style.opacity = '1'; });
+  setTimeout(function() { t.style.opacity = '0'; setTimeout(function() { t.remove(); }, 300); }, 2500);
 }
 
 // Mobile card detail toggle
