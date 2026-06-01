@@ -126,7 +126,7 @@ a:hover { text-decoration: underline; }
 .main-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto auto auto;
+  grid-auto-rows: auto;
   gap: 16px;
   padding: 16px 20px 24px;
 }
@@ -512,7 +512,7 @@ tr.expanded td { background: rgba(0,212,255,0.05); }
   </div>
 
   <!-- IG STATUS (bottom-right, spans) -->
-  <div class="panel" style="grid-column: 2; grid-row: span 1;">
+  <div class="panel">
     <div class="panel-header">📸 IG STATUS</div>
     <div class="panel-body" id="igStatusBody">
       <div class="loading">Loading IG stats</div>
@@ -670,10 +670,31 @@ function renderTasks(data) {
   }
   count.textContent = '(' + data.length + ')';
 
-  // Group by pillar
+  // Infer pillar from tags, title, or owner
+  function getPillar(task) {
+    const tags = (task.tags || []).map(function(t) { return t.toLowerCase(); });
+    const title = (task.title || task.label || task.name || '').toLowerCase();
+    const owner = (task.owner || '').toLowerCase();
+    if (task.pillar) return task.pillar.toLowerCase();
+    // Tag-based detection
+    if (tags.some(function(t) { return t.indexOf('cockpit') !== -1 || t.indexOf('infrastructure') !== -1; })) return 'cockpit_os';
+    if (tags.some(function(t) { return t.indexOf('content') !== -1 || t.indexOf('ig') !== -1 || t.indexOf('instagram') !== -1 || t.indexOf('reel') !== -1; })) return 'ig_content';
+    if (tags.some(function(t) { return t.indexOf('gumroad') !== -1 || t.indexOf('ebook') !== -1; })) return 'gumroad';
+    if (tags.some(function(t) { return t.indexOf('ppl') !== -1 || t.indexOf('aviation') !== -1 || t.indexOf('flight') !== -1; })) return 'ppl';
+    if (tags.some(function(t) { return t.indexOf('health') !== -1 || t.indexOf('personal') !== -1; })) return 'health';
+    // Title-based fallback
+    if (title.indexOf('gumroad') !== -1) return 'gumroad';
+    if (title.indexOf('cockpit') !== -1 || title.indexOf('heartbeat') !== -1 || title.indexOf('cloud run') !== -1) return 'cockpit_os';
+    if (title.indexOf('reel') !== -1 || title.indexOf('instagram') !== -1 || title.indexOf('post') !== -1) return 'ig_content';
+    if (title.indexOf('ppl') !== -1 || title.indexOf('flight') !== -1 || title.indexOf('solo') !== -1) return 'ppl';
+    // Owner-based fallback
+    if (owner === 'claude') return 'ig_content';
+    if (owner === 'raine') return 'cockpit_os';
+    return 'other';
+  }
   const groups = {};
   data.forEach(task => {
-    const pillar = (task.pillar || 'other').toLowerCase();
+    const pillar = getPillar(task);
     if (!groups[pillar]) groups[pillar] = [];
     groups[pillar].push(task);
   });
@@ -878,11 +899,11 @@ async function refreshAll() {
     safeApiFetch('/api/ig-status')
   ]);
 
-  renderJobs(jobs?.jobs || []);
-  renderEmails(emails?.emails || []);
-  renderTasks(tasks?.tasks || []);
-  renderCalendar(calendar?.items || []);
-  renderIGStats(ig);
+  try { renderJobs(jobs?.jobs || []); } catch(e) { console.error('renderJobs error', e); }
+  try { renderEmails(emails?.emails || []); } catch(e) { console.error('renderEmails error', e); }
+  try { renderTasks(tasks?.tasks || []); } catch(e) { console.error('renderTasks error', e); }
+  try { renderCalendar(calendar?.items || []); } catch(e) { console.error('renderCalendar error', e); }
+  try { renderIGStats(ig); } catch(e) { console.error('renderIGStats error', e); }
   updateRefreshTime();
 }
 
