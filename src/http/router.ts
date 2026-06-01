@@ -1121,6 +1121,23 @@ async function handleTaskDone(
   return jsonResponse(200, { ok: true, task: updated });
 }
 
+/** POST /api/tasks/:id/undo — marks task not-done, clears completed_on. */
+async function handleTaskUndo(
+  req: CockpitHttpRequest,
+  taskId: string,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  const existing = await getTaskById(ctx, taskId);
+  if (!existing) return badRequest(`task "${taskId}" not found`);
+  const updated = normalizeTaskInput(
+    { ...existing, done: false, completed_on: null },
+    existing,
+  );
+  await upsertTask(ctx, updated);
+  return jsonResponse(200, { ok: true, task: updated });
+}
+
 /** POST /api/tasks/:id/feedback — body { author, text } appends to feedback[]. */
 async function handleTaskFeedback(
   req: CockpitHttpRequest,
@@ -1234,7 +1251,7 @@ function matchTaskAction(p: string): { id: string; action: string } | null {
   if (parts.length !== 2) return null;
   const [id, action] = parts;
   if (!id || !action) return null;
-  if (!['done', 'feedback', 'escalate'].includes(action)) return null;
+  if (!['done', 'feedback', 'escalate', 'undo'].includes(action)) return null;
   return { id: decodeURIComponent(id), action };
 }
 
@@ -1882,6 +1899,8 @@ async function dispatch(req: CockpitHttpRequest): Promise<CockpitHttpResponse> {
       return await handleTaskFeedback(req, taskAction.id);
     if (taskAction.action === 'escalate')
       return await handleTaskEscalate(req, taskAction.id);
+    if (taskAction.action === 'undo')
+      return await handleTaskUndo(req, taskAction.id);
   }
 
   // Task PATCH: /api/tasks/:id

@@ -258,6 +258,50 @@ tr:last-child td { border-bottom: none; }
   font-size: 12px;
   margin-bottom: 4px;
 }
+/* Email tags */
+.email-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.email-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.email-tag.category { background: rgba(230,126,34,0.2); color: var(--orange); }
+.email-tag.importance.critical { background: rgba(231,76,60,0.2); color: var(--red); }
+.email-tag.importance.high { background: rgba(231,76,60,0.15); color: var(--red); }
+.email-tag.status.in_progress { background: rgba(0,212,255,0.15); color: var(--cyan); }
+.email-tag.status.reviewed { background: rgba(46,204,113,0.15); color: var(--green); }
+.email-tag.status.triaged { background: rgba(107,125,149,0.15); color: var(--text-dim); }
+/* Action summary */
+.email-action-summary {
+  color: var(--text-dim); font-size: 11px; line-height: 1.5; margin: 8px 0;
+  padding: 8px 10px; border-left: 3px solid var(--border);
+  background: rgba(255,255,255,0.02);
+}
+.email-card.critical .email-action-summary { border-left-color: var(--red); background: rgba(231,76,60,0.04); }
+/* Gmail link */
+.email-gmail-link {
+  display: inline-block; font-size: 11px; color: var(--cyan);
+  margin: 6px 0; text-decoration: none;
+}
+.email-gmail-link:hover { text-decoration: underline; }
+/* Action buttons */
+.email-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.email-act-btn {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+  padding: 4px 10px; border-radius: 4px; cursor: pointer;
+  font-size: 10px; font-family: inherit; font-weight: 600;
+}
+.email-act-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.email-act-btn.reviewed-btn:hover { border-color: var(--green); color: var(--green); }
+.email-act-btn.handle-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,0.1); }
+.email-act-btn.critical-btn:hover { border-color: var(--red); color: var(--red); }
+.email-act-btn.defer-btn:hover { border-color: var(--text-dim); color: var(--text-dim); }
+.email-card.reviewed { opacity: 0.5; }
+.email-card.in_progress { border-color: var(--cyan); }
 .email-preview {
   color: var(--text-dim);
   font-size: 11px;
@@ -673,23 +717,71 @@ function renderEmails(data) {
     return;
   }
   count.textContent = '(' + data.length + ')';
-  let html = '<div class="email-grid">';
-  data.forEach(email => {
-    const priority = (email.priority || 'medium').toLowerCase();
-    const from = email.from || email.sender || '--';
-    const subject = email.subject || '(no subject)';
-    const bodyPreview = email.body_preview || email.body || email.preview || '';
-    html += '<div class="email-card">';
+  var html = '<div class="email-grid">';
+  data.forEach(function(email) {
+    var from = email.from || email.sender || '--';
+    var subject = email.subject || '(no subject)';
+    var category = email.category || '';
+    var importance = email.importance || '';
+    var status = email.status || '';
+    var summary = email.action_summary || '';
+    var gmailLink = email.gmail_link || '';
+    var emailId = email.id || '';
+    var cardCls = 'email-card';
+    if (status === 'reviewed') cardCls += ' reviewed';
+    if (status === 'in_progress') cardCls += ' in_progress';
+    if (importance === 'critical') cardCls += ' critical';
+
+    html += '<div class="' + cardCls + '" data-id="' + esc(emailId) + '">';
+    // Top row: from + tags
     html += '<div class="email-top">';
     html += '<span class="email-from">' + esc(from) + '</span>';
-    html += '<span class="priority-badge ' + priority + '">' + esc(priority) + '</span>';
-    html += '</div>';
+    html += '<span class="email-tags">';
+    if (category) html += '<span class="email-tag category">' + esc(category.toUpperCase()) + '</span>';
+    if (importance) html += '<span class="email-tag importance ' + importance + '">' + esc(importance.toUpperCase()) + '</span>';
+    if (status) html += '<span class="email-tag status ' + status + '">' + esc(status.replace(/_/g,' ').toUpperCase()) + '</span>';
+    html += '</span></div>';
+    // Subject
     html += '<div class="email-subject">' + esc(subject) + '</div>';
-    html += '<div class="email-preview">' + esc(String(bodyPreview).substring(0, 120)) + '</div>';
-    html += '</div>';
+    // Action summary (AI note)
+    if (summary) {
+      html += '<div class="email-action-summary">' + esc(summary) + '</div>';
+    }
+    // Gmail link
+    if (gmailLink) {
+      html += '<a class="email-gmail-link" href="' + esc(gmailLink) + '" target="_blank" onclick="event.stopPropagation()">📧 Open in Gmail →</a>';
+    }
+    // Action buttons
+    html += '<div class="email-actions">';
+    html += '<button class="email-act-btn reviewed-btn" onclick="event.stopPropagation();actOnEmail(\'' + esc(emailId) + '\',\'reviewed\')">✓ DONE</button>';
+    html += '<button class="email-act-btn handle-btn" onclick="event.stopPropagation();actOnEmail(\'' + esc(emailId) + '\',\'handle\')">🔧 I GOT THIS</button>';
+    html += '<button class="email-act-btn critical-btn" onclick="event.stopPropagation();actOnEmail(\'' + esc(emailId) + '\',\'flag\')">🚩 FLAG</button>';
+    html += '<button class="email-act-btn defer-btn" onclick="event.stopPropagation();actOnEmail(\'' + esc(emailId) + '\',\'defer\')">⏳ LATER</button>';
+    html += '</div></div>';
   });
   html += '</div>';
   body.innerHTML = html;
+}
+
+// Email action handler
+function actOnEmail(emailId, action) {
+  var card = document.querySelector('.email-card[data-id="' + emailId + '"]');
+  fetch(API_BASE + '/api/email-triage/act', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+    body: JSON.stringify({ id: emailId, action: action })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.ok) {
+      if (action === 'defer') { if (card) card.style.opacity = '0.3'; }
+      else if (action === 'reviewed') { if (card) card.classList.add('reviewed'); }
+      else if (action === 'handle') { if (card) card.classList.add('in_progress'); }
+      showToast('✓ Email ' + action);
+    } else {
+      showToast('⚠ ' + (data.error || 'Failed'));
+    }
+  }).catch(function() {
+    showToast('⚠ Network error');
+  });
 }
 
 // --- RENDER: DAILY TASKS ---
@@ -747,12 +839,13 @@ function renderTasks(data) {
     html += '<div class="task-group">';
     html += '<div class="task-group-title">' + (labels[pillar] || pillar.toUpperCase()) + '</div>';
     tasks.forEach(task => {
+      const taskId = task.id || '';
       const status = (task.status || 'active').toLowerCase();
       const label = task.label || task.title || task.name || '--';
       const due = task.due_date || task.due || task.dueDate || '';
       const checked = status === 'done' ? ' checked' : '';
-      html += '<div class="task-item">';
-      html += '<input type="checkbox"' + checked + ' disabled>';
+      html += '<div class="task-item" id="task-' + esc(taskId) + '">';
+      html += '<input type="checkbox"' + checked + ' onchange="toggleTask(\'' + esc(taskId) + '\', this.checked)">';
       html += '<span class="task-label">' + esc(label) + '</span>';
       html += '<div class="task-meta">';
       if (status === 'done') {
@@ -778,12 +871,13 @@ function renderTasks(data) {
     html += '<div class="task-group">';
     html += '<div class="task-group-title">' + esc(pillar.toUpperCase()) + '</div>';
     tasks.forEach(task => {
+      const taskId = task.id || '';
       const status = (task.status || 'active').toLowerCase();
       const label = task.label || task.title || task.name || '--';
       const due = task.due_date || task.due || task.dueDate || '';
       const checked = status === 'done' ? ' checked' : '';
-      html += '<div class="task-item">';
-      html += '<input type="checkbox"' + checked + ' disabled>';
+      html += '<div class="task-item" id="task-' + esc(taskId) + '">';
+      html += '<input type="checkbox"' + checked + ' onchange="toggleTask(\'' + esc(taskId) + '\', this.checked)">';
       html += '<span class="task-label">' + esc(label) + '</span>';
       html += '<div class="task-meta">';
       if (status === 'done') {
@@ -803,6 +897,34 @@ function renderTasks(data) {
   });
 
   body.innerHTML = html || '<div class="empty-state">No tasks</div>';
+}
+
+// Task toggle handler
+function toggleTask(taskId, done) {
+  var item = document.getElementById('task-' + taskId);
+  var endpoint = done ? '/api/tasks/' + encodeURIComponent(taskId) + '/done' : '/api/tasks/' + encodeURIComponent(taskId) + '/undo';
+  fetch(API_BASE + endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+    body: '{}'
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (!data.ok) {
+      // Revert checkbox on failure
+      if (item) {
+        var cb = item.querySelector('input[type=checkbox]');
+        if (cb) cb.checked = !done;
+      }
+      showToast('⚠ ' + (data.error || 'Failed'));
+    } else {
+      showToast(done ? '✓ Task done' : '○ Task reopened');
+    }
+  }).catch(function() {
+    if (item) {
+      var cb = item.querySelector('input[type=checkbox]');
+      if (cb) cb.checked = !done;
+    }
+    showToast('⚠ Network error');
+  });
 }
 
 // --- RENDER: CONTENT CALENDAR ---
