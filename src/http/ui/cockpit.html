@@ -193,6 +193,36 @@ tr:last-child td { border-bottom: none; }
 .pill.running { background: rgba(52,152,219,0.15); color: var(--blue); }
 .pill.done, .pill.posted { background: rgba(46,204,113,0.15); color: var(--green); }
 .pill.failed { background: rgba(231,76,60,0.15); color: var(--red); }
+
+/* CALENDAR MOBILE CARDS */
+.cal-mobile { display: none; }
+.cal-desktop { display: block; }
+.cal-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.cal-card:hover { border-color: var(--cyan); }
+.cal-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.cal-date { color: var(--text); font-size: 13px; font-weight: 600; }
+.cal-platform { color: var(--cyan); font-size: 11px; text-transform: uppercase; }
+.cal-card-caption {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+}
 .pill.draft { background: rgba(107,125,149,0.15); color: var(--text-dim); }
 .pill.ready { background: rgba(0,212,255,0.15); color: var(--cyan); }
 .pill.active { background: rgba(0,212,255,0.15); color: var(--cyan); }
@@ -216,6 +246,7 @@ tr:last-child td { border-bottom: none; }
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
+  flex-wrap: wrap;
 }
 .email-from {
   font-weight: 600;
@@ -429,9 +460,13 @@ tr:last-child td { border-bottom: none; }
   .panel-body { padding: 6px 10px; overflow-x: auto; }
   table { font-size: 12px; display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
   th, td { padding: 6px 8px; }
-  .scroll-y { max-height: 180px; }
+  .scroll-y { max-height: none; overflow-y: visible; }
   body { font-size: 14px; }
   .panel-header { padding: 8px 10px; font-size: 13px; }
+  /* Calendar: cards on mobile */
+  .cal-desktop { display: none; }
+  .cal-mobile { display: block; }
+  .cal-card.expanded { border-color: var(--cyan); background: rgba(0,212,255,0.03); }
 }
 
 /* Calendar detail expansion */
@@ -448,6 +483,8 @@ tr:last-child td { border-bottom: none; }
 .detail-meta a { color: var(--cyan); text-decoration: underline; }
 .detail-actions { display: flex; gap: 8px; margin-top: 4px; }
 tr.expanded td { background: rgba(0,212,255,0.05); }
+.cal-detail { margin-top: 8px; }
+.cal-detail .detail-card { border-top: 1px solid var(--border); padding-top: 10px; }
 
 </style>
 </head>
@@ -800,6 +837,29 @@ function copyCaption(id) {
   navigator.clipboard.writeText(post.caption || '').then(function(){ alert('Caption copied!'); });
 }
 
+// Mobile card detail toggle
+function toggleCalCardDetail(card, post) {
+  var existing = card.querySelector('.cal-detail');
+  if (existing) {
+    existing.remove();
+    card.classList.remove('expanded');
+    return;
+  }
+  card.classList.add('expanded');
+  var detail = document.createElement('div');
+  detail.className = 'cal-detail';
+  detail.innerHTML = '<div class="detail-card">' +
+    '<div class="detail-caption">' + esc(post.caption || '') + '</div>' +
+    (post.song ? '<div class="detail-meta">🎵 ' + esc(post.song) + '</div>' : '') +
+    (post.video_url ? '<div class="detail-meta">📹 <a href="' + esc(post.video_url) + '" target="_blank" onclick="event.stopPropagation()">Watch Video</a></div>' : '') +
+    '<div class="detail-actions">' +
+      '<button class="btn primary" onclick="event.stopPropagation();postNow(\'' + esc(post.id || '') + '\')">📤 Post Now</button>' +
+      '<button class="btn" onclick="event.stopPropagation();copyCaption(\'' + esc(post.id || '') + '\')">📋 Copy Caption</button>' +
+    '</div>' +
+  '</div>';
+  card.appendChild(detail);
+}
+
 function renderCalendar(data) {
   const body = document.getElementById('calendarBody');
   const count = document.getElementById('calendarCount');
@@ -814,22 +874,32 @@ function renderCalendar(data) {
     return;
   }
   count.textContent = '(' + data.length + ')';
-  let html = '<table><thead><tr><th>Date</th><th>Platform</th><th>Caption</th><th>Status</th><th>Tags</th></tr></thead><tbody>';
+  // Desktop table
+  let html = '<div class="cal-desktop"><table><thead><tr><th>Date</th><th>Platform</th><th>Caption</th><th>Status</th><th>Tags</th></tr></thead><tbody>';
   data.forEach(post => {
     const date = formatDate(post.schedule_date || post.date || post.scheduled_at);
     const platform = post.platform || '--';
-    const caption = (post.caption || post.title || '').substring(0, 50);
+    const caption = (post.caption || post.title || '').substring(0, 60);
     const status = (post.status || 'draft').toLowerCase();
     const tags = Array.isArray(post.hashtags) ? post.hashtags.join(' ') : (post.hashtags || '');
     html += '<tr onclick="toggleCalendarDetail(this, ' + JSON.stringify(post).replace(/'/g, '&#39;') + ')" data-id="' + esc(post.id || '') + '" data-post="' + esc(JSON.stringify(post)).replace(/"/g, '&quot;') + '" style="cursor:pointer">';
-    html += '<td>' + esc(date) + '</td>';
-    html += '<td>' + esc(platform) + '</td>';
-    html += '<td>' + esc(caption) + '</td>';
+    html += '<td>' + esc(date) + '</td><td>' + esc(platform) + '</td><td class="cal-cap">' + esc(caption) + '</td>';
     html += '<td><span class="pill ' + status + '">' + esc(status) + '</span></td>';
-    html += '<td style="font-size:10px;color:var(--text-dim);">' + esc(String(tags).substring(0, 40)) + '</td>';
-    html += '</tr>';
+    html += '<td class="cal-tags">' + esc(String(tags).substring(0, 40)) + '</td></tr>';
   });
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
+  // Mobile cards
+  html += '<div class="cal-mobile">';
+  data.forEach(post => {
+    const date = formatDate(post.schedule_date || post.date || post.scheduled_at);
+    const platform = post.platform || '--';
+    const caption = post.caption || post.title || '';
+    const status = (post.status || 'draft').toLowerCase();
+    html += '<div class="cal-card" onclick="toggleCalCardDetail(this, ' + JSON.stringify(post).replace(/'/g, '&#39;') + ')" data-id="' + esc(post.id || '') + '" data-post="' + esc(JSON.stringify(post)).replace(/"/g, '&quot;') + '">';
+    html += '<div class="cal-card-top"><span class="cal-date">' + esc(date) + '</span><span class="cal-platform">' + esc(platform) + '</span><span class="pill ' + status + '">' + esc(status) + '</span></div>';
+    html += '<div class="cal-card-caption">' + esc(caption) + '</div></div>';
+  });
+  html += '</div>';
   body.innerHTML = html;
 }
 
