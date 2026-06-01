@@ -1420,13 +1420,20 @@ async function handleContentCalendar(
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const limit = Math.min(
-    Math.max(parseInt((req.query?.limit as string | undefined) || '20', 10) || 20, 1),
-    100,
-  );
-  const snap = await ctx.db.collection('content_calendar').orderBy('schedule_date', 'desc').limit(limit).get();
-  const items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-  return jsonResponse(200, { ok: true, items });
+  try {
+    const doc = await ctx.db.collection('user_state').doc('default__content_calendar').get();
+    if (!doc.exists) return jsonResponse(200, { ok: true, items: [] });
+    const data = doc.data();
+    const items = data?.value || data?.items || [];
+    const limit = Math.min(
+      Math.max(parseInt((req.query?.limit as string | undefined) || '20', 10) || 20, 1),
+      100,
+    );
+    return jsonResponse(200, { ok: true, items: items.slice(0, limit) });
+  } catch (err: any) {
+    console.error('content-calendar error:', err.message);
+    return jsonResponse(500, { ok: false, error: err.message });
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1439,13 +1446,40 @@ async function handleEmailTriage(
 ): Promise<CockpitHttpResponse> {
   if (!checkAdmin(req)) return unauthorized();
   const ctx = createContext({ uid: 'system', source: 'rpc' });
-  const limit = Math.min(
-    Math.max(parseInt((req.query?.limit as string | undefined) || '10', 10) || 10, 1),
-    50,
-  );
-  const snap = await ctx.db.collection('email_triage').orderBy('received_at', 'desc').limit(limit).get();
-  const emails = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-  return jsonResponse(200, { ok: true, emails });
+  try {
+    const doc = await ctx.db.collection('user_state').doc('default__email_triage').get();
+    if (!doc.exists) return jsonResponse(200, { ok: true, emails: [] });
+    const data = doc.data();
+    const emails = data?.value || data?.emails || [];
+    const limit = Math.min(
+      Math.max(parseInt((req.query?.limit as string | undefined) || '10', 10) || 10, 1),
+      50,
+    );
+    return jsonResponse(200, { ok: true, emails: emails.slice(0, limit) });
+  } catch (err: any) {
+    console.error('email-triage error:', err.message);
+    return jsonResponse(500, { ok: false, error: err.message });
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* IG Stats handler                                                            */
+/* -------------------------------------------------------------------------- */
+
+/** GET /api/ig-status — live Instagram stats from state store. */
+async function handleIGStatus(
+  req: CockpitHttpRequest,
+): Promise<CockpitHttpResponse> {
+  if (!checkAdmin(req)) return unauthorized();
+  const ctx = createContext({ uid: 'system', source: 'rpc' });
+  try {
+    const doc = await ctx.db.collection('user_state').doc('default__ig_stats').get();
+    if (!doc.exists) return jsonResponse(200, { ok: true, stats: null });
+    return jsonResponse(200, { ok: true, stats: doc.data()?.value || doc.data() });
+  } catch (err: any) {
+    console.error('ig-status error:', err.message);
+    return jsonResponse(500, { ok: false, error: err.message });
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1542,6 +1576,12 @@ const STATIC_ROUTES: CockpitRoute[] = [
     path: '/api/email-triage',
     description: 'List emails needing triage (admin)',
     handler: handleEmailTriage,
+  },
+  {
+    method: 'GET',
+    path: '/api/ig-status',
+    description: 'Live Instagram stats (admin)',
+    handler: handleIGStatus,
   },
   {
     method: 'GET',

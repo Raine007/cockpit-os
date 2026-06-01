@@ -510,38 +510,7 @@ tr.expanded td { background: rgba(0,212,255,0.05); }
   <div class="panel" style="grid-column: 2; grid-row: span 1;">
     <div class="panel-header">📸 IG STATUS</div>
     <div class="panel-body" id="igStatusBody">
-      <div class="ig-status-card">
-        <div class="ig-stat-row">
-          <div class="ig-stat-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10 10 0 0012 2zm0 3a3 3 0 11-3 3 3 3 0 013-3zm0 14a7 7 0 01-7-7h2a5 5 0 005 5 5 5 0 005-5h2a7 7 0 01-7 7z"/></svg>
-          </div>
-          <div>
-            <div class="ig-stat-value">520</div>
-            <div class="ig-stat-label">Followers</div>
-          </div>
-        </div>
-        <div class="ig-stat-row">
-          <div class="ig-stat-icon">
-            <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-          </div>
-          <div>
-            <div class="ig-stat-value">9</div>
-            <div class="ig-stat-label">Posts</div>
-          </div>
-        </div>
-        <div class="ig-target-badge">
-          <div class="ig-compass">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="12,2 14,10 22,12 14,14 12,22 10,14 2,12 10,10" fill="currentColor"/></svg>
-          </div>
-          <div>
-            <div>+50/wk Target</div>
-            <div class="ig-progress-bar" style="margin-top:6px;">
-              <div class="ig-progress-fill" style="width: 68%;"></div>
-            </div>
-            <div style="font-size:10px;color:var(--text-dim);margin-top:3px;">34 / 50 this week</div>
-          </div>
-        </div>
-      </div>
+      <div class="loading">Loading IG stats</div>
     </div>
   </div>
 
@@ -835,6 +804,40 @@ function esc(str) {
   return div.innerHTML;
 }
 
+// --- IG STATUS RENDER ---
+function renderIGStats(data) {
+  const body = document.getElementById('igStatusBody');
+  if (!data || !data.ok) {
+    body.innerHTML = '<div class="ig-status-card"><div class="ig-stat-row"><div class="ig-stat-value">--</div><div class="ig-stat-label">Unavailable</div></div></div>';
+    return;
+  }
+  const s = data.stats || data;
+  const followers = s.followers || 0;
+  const posts = s.posts || 0;
+  const target = s.target || 50;
+  const thisWeek = s.this_week || 0;
+  const pct = Math.min(100, Math.round((thisWeek / target) * 100));
+  const updated = s.updated_at ? new Date(s.updated_at).toLocaleDateString('en-US', {month:'short',day:'numeric'}) : '';
+  body.innerHTML =
+    '<div class="ig-status-card">' +
+      '<div class="ig-stat-row">' +
+        '<div class="ig-stat-icon"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1010 10A10 10 0 0012 2zm0 3a3 3 0 11-3 3 3 3 0 013-3zm0 14a7 7 0 01-7-7h2a5 5 0 005 5 5 5 0 005-5h2a7 7 0 01-7 7z"/></svg></div>' +
+        '<div><div class="ig-stat-value">' + followers.toLocaleString() + '</div><div class="ig-stat-label">Followers</div></div>' +
+      '</div>' +
+      '<div class="ig-stat-row">' +
+        '<div class="ig-stat-icon"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>' +
+        '<div><div class="ig-stat-value">' + posts + '</div><div class="ig-stat-label">Posts</div></div>' +
+      '</div>' +
+      '<div class="ig-target-badge">' +
+        '<div class="ig-compass"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><polygon points="12,2 14,10 22,12 14,14 12,22 10,14 2,12 10,10" fill="currentColor"/></svg></div>' +
+        '<div><div>+' + target + '/wk Target</div>' +
+          '<div class="ig-progress-bar" style="margin-top:6px;"><div class="ig-progress-fill" style="width:' + pct + '%;"></div></div>' +
+          '<div style="font-size:10px;color:var(--text-dim);margin-top:3px;">' + thisWeek + ' / ' + target + ' this week' + (updated ? ' · ' + updated : '') + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+
 // --- LOAD ALL ---
 async function refreshAll() {
   const token = getToken();
@@ -849,19 +852,22 @@ async function refreshAll() {
   document.getElementById('emailBody').innerHTML = '<div class="loading">Loading emails</div>';
   document.getElementById('tasksBody').innerHTML = '<div class="loading">Loading tasks</div>';
   document.getElementById('calendarBody').innerHTML = '<div class="loading">Loading calendar</div>';
+  document.getElementById('igStatusBody').innerHTML = '<div class="loading">Loading IG stats</div>';
 
   // Fetch all in parallel
-  const [jobs, emails, tasks, calendar] = await Promise.all([
+  const [jobs, emails, tasks, calendar, ig] = await Promise.all([
     safeApiFetch('/api/jobs?limit=20'),
     safeApiFetch('/api/email-triage?limit=10'),
     safeApiFetch('/api/tasks'),
-    safeApiFetch('/api/content-calendar')
+    safeApiFetch('/api/content-calendar'),
+    safeApiFetch('/api/ig-status')
   ]);
 
   renderJobs(jobs?.jobs || []);
   renderEmails(emails?.emails || []);
   renderTasks(tasks?.tasks || []);
   renderCalendar(calendar?.items || []);
+  renderIGStats(ig);
   updateRefreshTime();
 }
 
