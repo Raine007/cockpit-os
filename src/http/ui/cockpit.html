@@ -755,13 +755,23 @@ function toggleCalendarDetail(row, post) {
   detail.innerHTML = '<td colspan="5"><div class="detail-card">' +
     '<div class="detail-caption">' + esc(post.caption || '') + '</div>' +
     (post.song ? '<div class="detail-meta">🎵 ' + esc(post.song) + '</div>' : '') +
-    (post.videoUrl ? '<div class="detail-meta">📹 <a href="' + esc(post.videoUrl) + '" target="_blank" onclick="event.stopPropagation()">Watch Video</a></div>' : '') +
+    (post.video_url ? '<div class="detail-meta">📹 <a href="' + esc(post.video_url) + '" target="_blank" onclick="event.stopPropagation()">Watch Video</a></div>' : '') +
     '<div class="detail-actions">' +
-      '<button class="btn primary" onclick="event.stopPropagation();alert(\'Post action for: ' + esc(post.id || '') + '\')">📤 Post Now</button>' +
-      '<button class="btn" onclick="event.stopPropagation();navigator.clipboard.writeText(\'' + (post.caption || '').replace(/'/g, "\\'") + '\').then(function(){alert(\'Caption copied!\')})">📋 Copy Caption</button>' +
+      '<button class="btn primary" onclick="event.stopPropagation();postNow(\'' + esc(post.id || '') + '\')">📤 Post Now</button>' +
+      '<button class="btn" onclick="event.stopPropagation();copyCaption(\'' + esc(post.id || '') + '\')">📋 Copy Caption</button>' +
     '</div>' +
   '</div></td>';
   row.parentNode.insertBefore(detail, row.nextSibling);
+}
+
+function postNow(id) {
+  alert('Post action for: ' + id);
+}
+
+function copyCaption(id) {
+  const row = document.querySelector('[data-id="' + id + '"]');
+  const post = row ? JSON.parse(row.getAttribute('data-post') || '{}') : {};
+  navigator.clipboard.writeText(post.caption || '').then(function(){ alert('Caption copied!'); });
 }
 
 function renderCalendar(data) {
@@ -785,7 +795,7 @@ function renderCalendar(data) {
     const caption = (post.caption || post.title || '').substring(0, 50);
     const status = (post.status || 'draft').toLowerCase();
     const tags = Array.isArray(post.hashtags) ? post.hashtags.join(' ') : (post.hashtags || '');
-    html += '<tr onclick="toggleCalendarDetail(this, ' + JSON.stringify(post).replace(/'/g, '&#39;') + ')" data-id="' + esc(post.id || '') + '" style="cursor:pointer">';
+    html += '<tr onclick="toggleCalendarDetail(this, ' + JSON.stringify(post).replace(/'/g, '&#39;') + ')" data-id="' + esc(post.id || '') + '" data-post="' + esc(JSON.stringify(post)).replace(/"/g, '&quot;') + '" style="cursor:pointer">';
     html += '<td>' + esc(date) + '</td>';
     html += '<td>' + esc(platform) + '</td>';
     html += '<td>' + esc(caption) + '</td>';
